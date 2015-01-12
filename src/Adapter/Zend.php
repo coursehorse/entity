@@ -40,12 +40,16 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     public function getEntities($entityClass, array $ids = []) {
         $cachedEntities = [];
 
+        $originalIds = $ids;
         foreach($ids as $i => $id) {
             if ($entity = $this->_getFromLocalCache($entityClass, $id)) {
                 $cachedEntities[$entity->id] = $entity;
                 unset($ids[$i]);
             }
         }
+
+        // All entities found in cache
+        if (!empty($originalIds) && empty($ids)) return $cachedEntities;
 
         $rows = $this->_select($entityClass::getDataSourceName(), !empty($ids) ? ['id IN (?)' => (array) $ids] : []);
 
@@ -344,7 +348,8 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private function _selectOne($table, $id, $ignoreFields = []) {
         $cols = $this->_getColumns();
         foreach ($ignoreFields as $field) {
-            unset($cols[$field]);
+            $key = array_search($field, $cols);
+            unset($cols[$key]);
         }
 
         $select = $this->_adapter()->select()

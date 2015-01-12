@@ -283,7 +283,9 @@ abstract class Entity_Abstract {
                     $ids = array_unique(transform_array($entities, '_' . $currentPathPart . 'Id'));
                     $children = $entityName::load($ids, [$propertyPath]);
                     array_walk($entities, function($entity) use($currentPathPart, $children) {
-                        $entity->{$currentPathPart} = av($children, $entity->{'_' . $currentPathPart . 'Id'});
+                        if ($child = av($children, $entity->{'_' . $currentPathPart . 'Id'})) {
+                            $entity->{$currentPathPart} = $child;
+                        }
                     });
                     continue;
                 }
