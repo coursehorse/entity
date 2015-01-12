@@ -1,6 +1,16 @@
 {
     "name": "coursehorse/entity",
+    "description": "Active Record ORM",
+    "keywords": ["entity", "active record", "orm", "dao"],
+    "homepage": "http://dev.coursehorse.com",
+    "authors": [
+        {
+            "name": "Emil Diaz",
+            "email": "emil.h.diaz@gmail.com"
+        }
+    ],
     "require": {
+        "php": ">=5.5.0",
         "zendframework/zendframework1": "1.12.*"
     },
     "autoload": {
