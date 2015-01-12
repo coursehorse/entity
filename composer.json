@@ -1,0 +1,12 @@
+{
+    "name": "coursehorse/entity",
+    "require": {
+        "zendframework/zendframework1": "1.12.*"
+    },
+    "autoload": {
+        "psr-4": {
+            "CourseHorse\\": "src/",
+            "Vendor\\Namespace\\": ""
+        }
+    }
+}
