@@ -12,7 +12,7 @@ use CourseHorse\Adapter\Zend;
 use \CourseHorse_Date;
 use \Zend_Loader_Autoloader;
 use \ReflectionClass;
-use \CourseHorse_Exception;
+use \Exception;
 
 abstract class Entity_Abstract {
 
@@ -62,7 +62,7 @@ abstract class Entity_Abstract {
             $this->$name = $value;
         }
         else {
-            throw new CourseHorse_Exception("Unknown property '$name'");
+            throw new Exception("Unknown property '$name'");
         }
     }
 
@@ -101,7 +101,7 @@ abstract class Entity_Abstract {
         }
         // Unknown property
         else {
-            throw new CourseHorse_Exception("Unknown property '$name'");
+            throw new Exception("Unknown property '$name'");
         }
     }
 
@@ -147,7 +147,7 @@ abstract class Entity_Abstract {
     public function __wakeup() {
         // Reload failed so let's clear the entity and log the warning
         if ($this->id && !$this->reload()) {
-            throw new CourseHorse_Exception(get_class($this) . " with ID ({$this->id}) does not exist.");
+            throw new Exception(get_class($this) . " with ID ({$this->id}) does not exist.");
         }
     }
 
@@ -174,7 +174,7 @@ abstract class Entity_Abstract {
 
     public function copy(Entity_Abstract $entity) {
         if (get_class($this) !== get_class($entity))
-            throw new CourseHorse_Exception('Can\'t copy different objects');
+            throw new Exception('Can\'t copy different objects');
         foreach (get_object_vars($entity) as $key => $value) {
             if ($key == 'id') continue;
             $this->$key = $value;
@@ -248,7 +248,7 @@ abstract class Entity_Abstract {
         }
 
         if (!method_exists(static::getDataSource(), $methodName)) {
-            throw new CourseHorse_Exception("Unknown entity loading method '$name'");
+            throw new Exception("Unknown entity loading method '$name'");
         }
 
         return call_user_func_array(array(static::getDataSource(), $methodName), $arguments);
@@ -308,7 +308,7 @@ abstract class Entity_Abstract {
                     continue;
                 }
 
-                throw new CourseHorse_Exception("Invalid eager loading configuration. Path '$currentPathPart' is not configured for " . get_called_class());
+                throw new Exception("Invalid eager loading configuration. Path '$currentPathPart' is not configured for " . get_called_class());
 
             }
         }

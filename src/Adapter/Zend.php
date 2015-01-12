@@ -14,6 +14,7 @@ use \Zend_Db_Table_Abstract;
 use \ArrayObject;
 use \ArrayAccess;
 use \ReflectionClass;
+use \Exception;
 
 class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private static $_cacheEnabled = true;
@@ -153,7 +154,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
     public function addDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
         if (!$linkTableName = $this->_getLinkTable($parent, $dependent)) {
-            throw new CourseHorse_Exception('Cannot determine reference table to add dependent to');
+            throw new Exception('Cannot determine reference table to add dependent to');
         }
 
         $info = $this->_getReferences($linkTableName);
@@ -161,7 +162,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $parentKey = $info[$parent::getDataSourceName()]['column'];
 
         if ($row = $this->_select($linkTableName, ["$dependentKey = ?" => $dependent->id, "$parentKey = ?" => $parent->id])) {
-            throw new CourseHorse_Exception('Cannot add dependent. Dependent already attached.');
+            throw new Exception('Cannot add dependent. Dependent already attached.');
         }
 
         $this->_insert($linkTableName, [$dependentKey => $dependent->id, $parentKey => $parent->id]);
@@ -170,7 +171,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
     public function deleteDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
         if (!$linkTableName = $this->_getLinkTable($parent, $dependent)) {
-            throw new CourseHorse_Exception('Cannot determine reference table to remove dependent from');
+            throw new Exception('Cannot determine reference table to remove dependent from');
         }
 
         $info = $this->_getReferences($linkTableName);
@@ -178,7 +179,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $parentKey = $info[$parent::getDataSourceName()]['column'];
 
         if (!$row = $this->_select($linkTableName, ["$dependentKey = ?" => $dependent->id, "$parentKey = ?" => $parent->id])) {
-            throw new CourseHorse_Exception('Cannot remove dependent. Dependent is not attached.');
+            throw new Exception('Cannot remove dependent. Dependent is not attached.');
         }
 
         $this->_delete($linkTableName, ["$dependentKey = ?" => $dependent->id, "$parentKey = ?" => $parent->id]);
