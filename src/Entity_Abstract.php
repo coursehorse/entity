@@ -61,7 +61,7 @@ abstract class Entity_Abstract {
             $this->$name = $value;
         }
         else {
-            throw new Exception("Unknown property '$name'");
+            throw new CourseHorse_Exception("Unknown property '$name'");
         }
     }
 
@@ -100,7 +100,7 @@ abstract class Entity_Abstract {
         }
         // Unknown property
         else {
-            throw new Exception("Unknown property '$name'");
+            throw new CourseHorse_Exception("Unknown property '$name'");
         }
     }
 
@@ -247,7 +247,7 @@ abstract class Entity_Abstract {
         }
 
         if (!method_exists(static::getDataSource(), $methodName)) {
-            throw new Exception("Unknown entity loading method '$name'");
+            throw new CourseHorse_Exception("Unknown entity loading method '$name'");
         }
 
         return call_user_func_array(array(static::getDataSource(), $methodName), $arguments);
