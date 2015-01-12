@@ -10,6 +10,10 @@ namespace CourseHorse\Adapter;
 
 use CourseHorse\DataSourceInterface;
 use CourseHorse\Entity_Abstract;
+use \Zend_Db_Table_Abstract;
+use \ArrayObject;
+use \ArrayAccess;
+use \ReflectionClass;
 
 class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private static $_cacheEnabled = true;
@@ -488,5 +492,72 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
     private function _getKey($entityClass, $id, $additionalKeys = []) {
         return implode('.', array_merge([$entityClass::getEntityName(), serialize($id)], (array) $additionalKeys));
+    }
+
+
+
+    #TEMPORARY WHILE I REMOVE TAU DEPENDENCIES FROM COURSEHOURSE
+    public $_rowsetClass = 'Tau_Db_Table_Rowset_Abstract';
+
+    final public function getRowByAnchor() {
+        $anchor = func_get_args();
+        if (count($anchor) == 1) {
+            if ($anchor[0] instanceof $this->_rowClass) {
+                $RowGateway = $anchor[0];
+            } else {
+                $RowGateway = $this->find($anchor[0])
+                    ->current();
+            }
+        } else {
+            $RowGateway = call_user_func_array(array($this, 'find'), $anchor)
+                ->current();
+        }
+
+        if (!$RowGateway) {
+            return null;
+            //throw new Tau_Exception('Anchor Problem: No active row');
+        }
+
+        return $RowGateway;
+    }
+
+    public function getSimpleDataList($field_name='caption', $order=null, $where=null) {
+        if(!is_array($field_name)) {
+            $field_name = array('id', $field_name);
+        }
+
+        $db = $this->getDefaultAdapter();
+        $select = $db->select()
+            ->from($this->_name, $field_name)
+        ;
+        if($where) {
+            $select->where($where);
+        }
+        if($order) {
+            $select->order($order);
+        }
+
+        return $db->fetchAll($select);
+    }
+
+    public function addRowFromArray($data) {
+        $RowGateway = $this->createRow();
+        return $RowGateway->updateRowData(
+            $data
+        );
+    }
+
+    public function updateRowDataByAnchor($row, $data) {
+        $RowGateway = $this->getRowByAnchor($row);
+        return $RowGateway->updateRowData($data);
+    }
+
+    public function deleteRowByAnchor($row) {
+        $RowGateway = $this->getRowByAnchor($row);
+        if ($RowGateway->delete()) {
+            return true;
+        } else {
+            throw new Tau_Exception('Could not delete current row');
+        }
     }
 }

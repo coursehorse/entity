@@ -9,6 +9,9 @@
 namespace CourseHorse;
 
 use CourseHorse\Adapter\Zend;
+use \CourseHorse_Date;
+use \Zend_Loader_Autoloader;
+use \ReflectionClass;
 
 abstract class Entity_Abstract {
 
