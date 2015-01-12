@@ -12,6 +12,7 @@ use CourseHorse\Adapter\Zend;
 use \CourseHorse_Date;
 use \Zend_Loader_Autoloader;
 use \ReflectionClass;
+use \CourseHorse_Exception;
 
 abstract class Entity_Abstract {
 
