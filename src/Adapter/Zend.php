@@ -10,7 +10,9 @@ namespace CourseHorse\Adapter;
 
 use CourseHorse\DataSourceInterface;
 use CourseHorse\Entity_Abstract;
+use \CourseHorse_Db_Select;
 use \Zend_Db_Table_Abstract;
+use \Zend_Loader_Autoloader;
 use \ArrayObject;
 use \ArrayAccess;
 use \ReflectionClass;
@@ -37,23 +39,45 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         return $entity;
     }
 
-    public function getEntities($entityClass, array $ids = []) {
+    public function getEntities($entityClass, array $ids = [], CourseHorse_Db_Select $select = null) {
         $cachedEntities = [];
 
-        $originalIds = $ids;
-        foreach($ids as $i => $id) {
-            if ($entity = $this->_getFromLocalCache($entityClass, $id)) {
-                $cachedEntities[$entity->id] = $entity;
-                unset($ids[$i]);
-            }
+        $dsName = $entityClass::getDataSourceName();
+
+        if ($select) {
+            // configure query for this type of operation
+            $select->from($dsName);
+            $select->where($dsName . '.id IN (?)', (array) $ids);
+            $select->expand();
+
+            $sql = (string) $select;
+
+            $rows = $this->_query($select);
+            $entities = transform_array($select->normalize($rows), function($row, $rowId) {
+                return transform_array($row, function($subrows, $tableName) {
+                    return $this->mapEntities(new ArrayObject($subrows), self::getEntityClass($tableName));
+                });
+            });
+
+            return $entities;
         }
+        else {
+            // check for entities in cache
+            $originalIds = $ids;
+            foreach($ids as $i => $id) {
+                if ($entity = $this->_getFromLocalCache($entityClass, $id)) {
+                    $cachedEntities[$entity->id] = $entity;
+                    unset($ids[$i]);
+                }
+            }
 
-        // All entities found in cache
-        if (!empty($originalIds) && empty($ids)) return $cachedEntities;
+            // All entities found in cache
+            if (!empty($originalIds) && empty($ids)) return $cachedEntities;
 
-        $rows = $this->_select($entityClass::getDataSourceName(), !empty($ids) ? ['id IN (?)' => (array) $ids] : []);
-
-        return $cachedEntities + $this->mapEntities(new ArrayObject($rows), $entityClass);
+            // load the remaining entities and merged with those found in the cache
+            $rows = $this->_select($dsName, !empty($ids) ? ['id IN (?)' => (array) $ids] : []);
+            return $cachedEntities + $this->mapEntities(new ArrayObject($rows), $entityClass);
+        }
     }
 
     public function updateEntities(array $entities, $data) {
@@ -66,15 +90,8 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     public function saveEntity(Entity_Abstract $entity) {
-        // get table columns and entity data
-        $defaults = array_combine($this->_getColumns(), array_fill(0, count($this->_getColumns()), null));
+        // get data for db
         $data = $this->_mapData($entity);
-
-        // never allow IDs to be updated
-        unset($data['id']);
-
-        // filter out properties not in the table
-        $data = array_intersect_key($data, $defaults);
 
         // skip of there is nothing to update
         if (empty($data)) return $entity;
@@ -190,6 +207,11 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $this->_removeFromLocalCache($parent, $parent->id, 'dependents');
     }
 
+    public function cache($parentClass, $ids, $entities, $dependentClass, $where, $order, $limit) {
+        $whereHash = md5(serialize($where) . serialize($order) . serialize($limit));
+        $this->_saveToLocalCache($parentClass, $ids, $entities, ['dependents', $dependentClass, $whereHash]);
+    }
+
     public static function clearCache() {
         self::$_localCache = [];
     }
@@ -198,14 +220,23 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         self::$_cacheEnabled = false;
     }
 
-    public static function getEntityClass() {
-        return 'Entity_' . static::$entityName;
+    public static function getEntityClass($table) {
+        $entityClass = 'Entity_' . str_replace(' ', '', snakeToNormal($table));
+        $tableClass = str_replace(' ', '', snakeToNormal($table)) . 'Table';
+
+        // Check if a table class has been defined
+        if (is_class($tableClass)) $entityClass = 'Entity_' . $tableClass::$entityName;
+
+        // Check to make sure we found a real entity class
+        if (!is_class($entityClass)) throw new Exception("Cannot determine Entity class for table '$table");
+
+        return $entityClass;
     }
 
     protected function mapEntity($data, Entity_Abstract $entity = null, $entityClass = null) {
         if (!$data) return null;
 
-        $entityClass = $entityClass ?: static::getEntityClass();
+        $entityClass = $entityClass ?: static::getEntityClass($this->info(self::NAME));
         $entity = $entity ?: $this->_getFromLocalCache($entityClass, $data['id']) ?: new $entityClass();
         $this->_map($data, $entity);
         $this->_saveToLocalCache($entity, $entity->id, $entity);
@@ -219,6 +250,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
         $entities = array();
         foreach($rows as $row) {
+            if (empty($row['id'])) continue;
             $entities[$row['id']] = $this->mapEntity($row, null, $entityClass);
         }
         return $entities;
@@ -265,41 +297,36 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
     private function _mapData(Entity_Abstract $entity) {
         // entity -> database
-        $reflection = new ReflectionClass($entity);
-        $properties = $reflection->getProperties();
-
         $data = [];
-        foreach ($properties as $property) {
-            $propertyString = $property->name;
-
-            // Skip all static properties ($_table)
-            if ($property->isStatic()) {
-                continue;
-            }
-
-            $scProperty = camelToSnakeCase($propertyString);
+        foreach ($entity->getDirty() as $property => $value) {
+            $scProperty = camelToSnakeCase($property);
             $cscProperty = 'course_' . $scProperty;
             $rnProperty = 'course_' . lcfirst($entity::getEntityName()) . '_' . $scProperty;
 
             // subscriptionDate -> subscription_date
-            if (preg_match('/.+Date$/', $propertyString) || preg_match('/^date$/', $propertyString) || preg_match('/.+Time$/', $propertyString) || preg_match('/^time$/', $propertyString)) {
-                $data[$scProperty] = $entity->$propertyString ? $entity->$propertyString->toString() : null;
+            if (preg_match('/.+Date$/', $property) || preg_match('/^date$/', $property) || preg_match('/.+Time$/', $property) || preg_match('/^time$/', $property)) {
+                $data[$scProperty] = $value ? $value->toString() : null;
             }
             // _userId -> user_id
-            elseif (preg_match('/_(.+)Id$/', $propertyString, $matches)) {
-                $relatedEntityId = $entity->$propertyString ?: ($entity->{$matches[1]} ? $entity->{$matches[1]}->id : null);
+            elseif (preg_match('/_(.+)Id$/', $property, $matches)) {
+                $relatedEntityId = $value ?: ($entity->{$matches[1]} ? $entity->{$matches[1]}->id : null);
                 $data[$cscProperty] = $relatedEntityId;
                 $data[$scProperty] = $relatedEntityId;
                 $data[$rnProperty] = $relatedEntityId;
             }
             // id -> id
             else {
-                $data[$scProperty] = $entity->$propertyString;
+                $data[$scProperty] = $value;
             }
         }
 
+        $reflection = new ReflectionClass($entity);
         $map = $reflection->getMethod('mapData')->getClosure($entity);
         $data = (call_user_func($map, $data) ?: []) + $data;
+
+        // filter out properties not in the table
+        $columns = array_combine($this->_getColumns(), array_fill(0, count($this->_getColumns()), null));
+        $data = array_intersect_key($data, $columns);
 
         return $data;
     }
@@ -370,8 +397,8 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         return $this->_adapter()->delete($table, $where);
     }
 
-    private function _getColumns() {
-        return array_keys($this->_getMetadata());
+    private function _getColumns($table = null) {
+        return array_keys($this->_getMetadata($table));
     }
 
     private function _getMetadata($table = null) {
@@ -496,8 +523,10 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         return array_key_exists($key, self::$_localCache);
     }
 
-    private function _getKey($entityClass, $id, $additionalKeys = []) {
-        return implode('.', array_merge([$entityClass::getEntityName(), serialize($id)], (array) $additionalKeys));
+    private function _getKey($entityClass, $ids, $additionalKeys = []) {
+        if (is_array($ids)) array_walk($ids, 'intval');
+        if (is_numeric($ids)) $ids = (int) $ids;
+        return implode('.', array_merge([$entityClass::getEntityName(), serialize($ids)], (array) $additionalKeys));
     }
 
 

@@ -10,17 +10,15 @@ namespace CourseHorse;
 
 use CourseHorse\Adapter\Zend;
 use \CourseHorse_Date;
-use \Zend_Loader_Autoloader;
+use \CourseHorse_Db_Select;
 use \ReflectionClass;
 use \Exception;
 
 abstract class Entity_Abstract {
-
     public $_links = [];
-    private $_snapshot;
+    private $_snapshot = [];
     private $_dependentEntities = [];
 
-    const NOTIFY_FLAG = '#';
     protected static $_dependents = [];
     protected static $_table;
 
@@ -81,14 +79,11 @@ abstract class Entity_Abstract {
         }
         // Next if property ID exists load related entity
         elseif (property_exists($this, $propIdName)) {
-            $autoloader = Zend_Loader_Autoloader::getInstance();
-            $autoloader->suppressNotFoundWarnings(true);
-            $entityClass = class_exists('Entity_'.ucfirst($name)) ? 'Entity_'.ucfirst($name) : get_class($this).ucfirst($name);
-            $autoloader->suppressNotFoundWarnings(false);
+            $entityClass = is_class('Entity_'.ucfirst($name)) ? 'Entity_'.ucfirst($name) : get_class($this).ucfirst($name);
             return $this->getRelatedEntity($name, $entityClass);
         }
         // Next if dependent config exists load dependent
-        elseif (!empty(static::$_dependents[$name]) || !empty(static::$_dependents[self::NOTIFY_FLAG.$name])) {
+        elseif (!empty(static::$_dependents[$name])) {
             return $this->getDependent($name);
         }
         // Next load special protected properties
@@ -116,7 +111,7 @@ abstract class Entity_Abstract {
         elseif (property_exists($this, $propIdName)) {
             return true;
         }
-        elseif (!empty(static::$_dependents[$name]) || !empty(static::$_dependents[self::NOTIFY_FLAG.$name])) {
+        elseif (!empty(static::$_dependents[$name])) {
             return true;
         }
         elseif (property_exists($this, $propName)) {
@@ -158,7 +153,7 @@ abstract class Entity_Abstract {
         static::getDataSource()->saveEntity($this);
         $isNew ? $this->postInsert() : $this->postUpdate();
         $isNew ? $this->_notifyReferences('dependentAdded') : $this->_notifyReferences('dependentUpdated');
-
+        $this->_snapshot();
     }
 
     public function drop() {
@@ -230,6 +225,12 @@ abstract class Entity_Abstract {
         return $values;
     }
 
+    public function getDirty() {
+        $properties = $this->id ? array_diff_assoc($this->getSnapshot(), $this->toArray()) : $this->toArray();
+        unset($properties['id']);
+        return $properties;
+    }
+
     public function callHook($name) {
         #HACK to support hooks with zend db rows
         $this->{$name};
@@ -254,16 +255,152 @@ abstract class Entity_Abstract {
         return call_user_func_array(array(static::getDataSource(), $methodName), $arguments);
     }
 
-    public static function load($id, $eagerFetchProperties = [], $dependent = null) {
+    public static function load($ids) {
+        $ds = static::getDataSource();
+        return $ds->getEntities(get_called_class(), (array) $ids);
+    }
+
+    public static function loadBulk($ids, $eagerFetchProperties = [], $context = null, $contextData = null) {
+        # Eager load using SQL joins
+
         $ds = static::getDataSource();
 
-        if ($dependent) {
-            list($type, $where, $order, $limit) = self::_getDependentConfig($dependent);
+        $select = new CourseHorse_Db_Select($ds);
 
-            $entities = call_user_func_array([$ds, 'getDependents'], [get_called_class(), (array) $id, 'Entity_' . $type, $where, $order, $limit]);
+        $eagerFetchEntities = array_intersect_key(
+            array_merge(static::getReferenceProperties(), static::getDependentProperties()),
+            $eagerFetchProperties
+        );
+        $eagerFetchTables = transform_array($eagerFetchEntities, function($class) {
+            return $class::getDataSourceName();
+        });
+
+        foreach ($eagerFetchProperties as $property => $on) {
+            if (empty($eagerFetchTables[$property])) {
+                throw new Exception("Invalid eager loading configuration. Path '$property' is not configured for " . get_called_class());
+            }
+
+            $entityClass = $eagerFetchEntities[$property];
+            $tableName = $eagerFetchTables[$property];
+
+            // Process sub load call
+            if (is_array($on)) {
+                list($subeagerFetchProperties, $subIds) = $on;
+                $entityClass::loadBulk($subIds, $subeagerFetchProperties, get_called_class().'.'.$property, $ids);
+                unset($eagerFetchEntities[$property]);
+                unset($eagerFetchTables[$property]);
+                continue;
+            }
+
+            // honor dependency rules
+            $where = null;
+            $joinWhere = '';
+            if (!empty(static::$_dependents[$property])) {
+                list($type, $where, $order, $limit) = self::_getDependentConfig($property);
+                foreach((array) $where as $clause => $value) {
+                    if (is_string($clause)) {
+                        $joinWhere = " AND ($tableName." . $select->getAdapter()->quoteInto($clause, $value) . ")";
+                    }
+                    else {
+                        $joinWhere = " AND ($tableName." . $value . ")";
+                    }
+                }
+            }
+
+            $select->joinLeft($tableName, $on . $joinWhere);
+        }
+
+        // This is being loaded in the context of another entity
+        if ($context) {
+            list($entityClass, $property) = explode('.', $context);
+
+            if (!empty($entityClass::getDependentProperties()[$property])) {
+                list($type, $where, $order, $limit) = $entityClass::_getDependentConfig($property);
+                foreach((array) $where as $clause => $value) {
+                    $select->where(static::getDataSourceName() . '.' . $clause, $value);
+                }
+                if ($order) $select->order($order);
+            }
+        }
+
+        $mainDataSourceName = static::getDataSourceName();
+        $rows = $ds->getEntities(get_called_class(), (array) $ids, $select);
+        $entities = [];
+
+        foreach ($rows as $i => $row) {
+            $entity = first(av($row, $mainDataSourceName));
+
+            foreach ($entity::getReferenceProperties() as $property => $class) {
+                // reference was not part of eager loading request
+                if (empty($eagerFetchEntities[$property])) continue;
+
+                // reference was not loaded
+                if (!$referenceEntities = av($row, $class::getDataSourceName())) continue;
+
+                // this specific reference was not loaded
+                if (!$referenceEntity = av($referenceEntities, $entity->{$property.'Id'})) continue;
+
+                $entity->$property = $referenceEntity;
+            }
+
+            foreach ($entity::getDependentProperties() as $property => $class) {
+                // reference was not part of eager loading request
+                if (empty($eagerFetchEntities[$property])) continue;
+
+                // reference was not loaded
+                if (!array_key_exists($class::getDataSourceName(), $row)) continue;
+
+                $dependentEntities = av($row, $class::getDataSourceName());
+
+                list($type, $where, $order, $limit) = $entity::_getDependentConfig($property);
+
+                if ($limit ==  1) {
+                    $entity->setRelatedEntityProperty($property, first($dependentEntities));
+                }
+                else {
+                    $entity->setRelatedEntityProperty($property, $dependentEntities + av($entity->_dependentEntities, $property, []));
+                }
+            }
+
+            $entities[$entity->id] = $entity;
+        }
+
+        // This is being loaded in the context of another entity so CACHE IT
+        if ($context) {
+            list($entityClass, $property) = explode('.', $context);
+
+            if (!empty($entityClass::getDependentProperties()[$property])) {
+                list($type, $where, $order, $limit) = $entityClass::_getDependentConfig($property);
+                $childClass = 'Entity_' . $type;
+                if (!$key = av(array_flip($childClass::getReferenceProperties()), $entityClass)) {
+                    throw new Exception("Invalid eager loading configuration. Path '$property' does not reference " . get_called_class());
+                }
+
+                foreach((array) $contextData as $id) {
+                    $children = array_filter($entities, function($entity) use($id, $key) {
+                        return $entity->{$key.'Id'} == $id;
+                    });
+
+                    $ds->cache($entityClass, $id, $children ?: [], $childClass, $where, $order, $limit);
+                }
+            }
+        }
+
+        return $entities;
+    }
+
+    public static function loadProgressive($ids, $eagerFetchProperties = [], $context = null, $contextData= null) {
+        # Eager load in progressive selects
+
+        $ds = static::getDataSource();
+
+        // Otherwise use progressive loading
+        if ($context) {
+            list($type, $where, $order, $limit) = self::_getDependentConfig($context);
+            $entities = call_user_func_array([$ds, 'getDependents'], [get_called_class(), (array) $ids, 'Entity_' . $type, $where, $order, $limit]);
         }
         else {
-            $entities = $ds->getEntities(get_called_class(), (array) $id);
+            $entities = $ds->getEntities(get_called_class(), (array) $ids);
         }
 
         // Eager load properties relying on good old recursion to traverse
@@ -281,7 +418,7 @@ abstract class Entity_Abstract {
                 $entityName = 'Entity_' . ucfirst($hint ?: $currentPathPart);
                 if (property_exists(first($entities), '_' . $currentPathPart . 'Id')) {
                     $ids = array_unique(transform_array($entities, '_' . $currentPathPart . 'Id'));
-                    $children = $entityName::load($ids, [$propertyPath]);
+                    $children = $entityName::loadProgressive($ids, [$propertyPath]);
                     array_walk($entities, function($entity) use($currentPathPart, $children) {
                         if ($child = av($children, $entity->{'_' . $currentPathPart . 'Id'})) {
                             $entity->{$currentPathPart} = $child;
@@ -295,7 +432,7 @@ abstract class Entity_Abstract {
                 $vars = get_class_vars($entityName);
                 if (!empty($vars['_dependents'][$currentPathPart])) {
                     $ids = array_unique(transform_array($entities, 'id'));
-                    $children = $entityName::load($ids, [$propertyPath], $currentPathPart);
+                    $children = $entityName::loadProgressive($ids, [$propertyPath], $currentPathPart);
                     $groupedChildren = [];
                     foreach($children as $child) {
                         foreach($child->_links[$entityName::getEntityName()] as $link) {
@@ -458,16 +595,10 @@ abstract class Entity_Abstract {
 
     private static function _getDependentConfig($name) {
         $config = [null, null, null, null];
-        if (!empty(static::$_dependents[$name])) {
-            $config = static::$_dependents[$name] + $config;
+        if (empty(static::$_dependents[$name])) {
+            throw new Exception("invalid eager loading configuration. path '$name' is not configured for " . get_called_class());
         }
-        elseif (!empty(static::$_dependents[self::NOTIFY_FLAG.$name])) {
-            $config = static::$_dependents[self::NOTIFY_FLAG.$name] + $config;
-        }
-        else {
-            throw new coursehorse_exception("invalid eager loading configuration. path '$name' is not configured for " . get_called_class());
-        }
-        return $config;
+        return $config = static::$_dependents[$name] + $config;;
     }
 
     private static function getReferenceProperties() {
@@ -479,13 +610,12 @@ abstract class Entity_Abstract {
 
         foreach($properties as $property) {
             // Flatten IDs
-            if (($property[0] == '_') && (substr($property, 0, -2) == 'Id')) {
+            if (($property[0] == '_') && (substr($property, -2) == 'Id')) {
                 $name = substr($property, 1, -2);
                 $class = null;
-                if (class_exists('Entity_'.ucfirst($name))) $class = 'Entity_'.ucfirst($name);
-                if (class_exists($thisClass.ucfirst($name))) $class = $thisClass.ucfirst($name);
+                if (is_class('Entity_'.ucfirst($name))) $class = 'Entity_'.ucfirst($name);
+                if (is_class($thisClass.ucfirst($name))) $class = $thisClass.ucfirst($name);
                 if (!$class) continue;
-
                 $values[$name] = $class;
             }
         }
@@ -494,8 +624,19 @@ abstract class Entity_Abstract {
     }
 
     private static function getDependentProperties() {
-        return extract_pairs(static::$_dependents, function($config, $dependent) {
-            return in('#', $dependent) ? substr($dependent, 1) : null;
-        }, 0, false);
+        $thisClass = get_called_class();
+        return extract_pairs(static::$_dependents,
+            function($config, $dependent) use($thisClass) {
+                return in('#', $dependent) ? substr($dependent, 1) : $dependent;
+            },
+            function($config, $dependent) use ($thisClass) {
+                $class = null;
+                $name = $config[0];
+                if (is_class('Entity_'.ucfirst($name))) $class = 'Entity_'.ucfirst($name);
+                if (is_class($thisClass.ucfirst($name))) $class = $thisClass.ucfirst($name);
+                return $class;
+            },
+            false
+        );
     }
 }

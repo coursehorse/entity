@@ -8,11 +8,13 @@
  */
 namespace CourseHorse;
 
+use \CourseHorse_Db_Select;
+
 interface DataSourceInterface {
 
     public function getEntity($entityClass, $id, Entity_Abstract $existingEntity = null);
 
-    public function getEntities($entityClass, array $ids = []);
+    public function getEntities($entityClass, array $ids = [], CourseHorse_Db_Select $select = null);
 
     public function updateEntities(array $entities, $data);
 
