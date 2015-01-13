@@ -99,7 +99,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         // insert new row
         if (!$entity->id) {
             $this->_insert($entity::getDataSourceName(), $data);
-            $entity->id = $this->_adapter()->lastInsertId();
+            $entity->id = $this->getAdapter()->lastInsertId();
         }
         // update existing row
         else {
@@ -123,7 +123,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             return $this->_getFromLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash]);
         }
 
-        $select = $this->_adapter()->select()->from(['a' => $dependentClass::getDataSourceName()]);
+        $select = $this->getAdapter()->select()->from(['a' => $dependentClass::getDataSourceName()]);
 
         // Add join clause
         if ($linkTableName = $this->_getLinkTable($parentClass, $dependentClass)) {
@@ -256,6 +256,14 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         return $entities;
     }
 
+    public function getAdapter() {
+        return $this->_db;
+    }
+
+    public function getColumns($table = null) {
+        return array_keys($this->_getMetadata($table));
+    }
+
     private function _map($data, Entity_Abstract $entity) {
         // database -> entity
         $reflection = new ReflectionClass($entity);
@@ -325,7 +333,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $data = (call_user_func($map, $data) ?: []) + $data;
 
         // filter out properties not in the table
-        $columns = array_combine($this->_getColumns(), array_fill(0, count($this->_getColumns()), null));
+        $columns = array_combine($this->getColumns(), array_fill(0, count($this->getColumns()), null));
         $data = array_intersect_key($data, $columns);
 
         return $data;
@@ -352,16 +360,12 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         return first(($matches));
     }
 
-    private function _adapter() {
-        return $this->_db;
-    }
-
     private function _query($select) {
-        return $this->_adapter()->fetchAll($select);
+        return $this->getAdapter()->fetchAll($select);
     }
 
     private function _select($table, $where = [], $order = null, $limit = null) {
-        $select = $this->_adapter()->select()->from($table);
+        $select = $this->getAdapter()->select()->from($table);
         if (!empty($where)) {
             foreach($where as $clause => $value) {
                 $select->where($clause, $value);
@@ -373,32 +377,28 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     private function _selectOne($table, $id, $ignoreFields = []) {
-        $cols = $this->_getColumns();
+        $cols = $this->getColumns();
         foreach ($ignoreFields as $field) {
             $key = array_search($field, $cols);
             unset($cols[$key]);
         }
 
-        $select = $this->_adapter()->select()
+        $select = $this->getAdapter()->select()
             ->from($table, !empty($ignoreFields) ? $cols : '*')
             ->where('id = ?', $id);
-        return $this->_adapter()->fetchRow($select);
+        return $this->getAdapter()->fetchRow($select);
     }
 
     private function _insert($table, $data) {
-        return $this->_adapter()->insert($table, $data);
+        return $this->getAdapter()->insert($table, $data);
     }
 
     private function _update($table, $ids, $data) {
-        return $this->_adapter()->update($table, $data, ['id IN (?)' => (array) $ids]);
+        return $this->getAdapter()->update($table, $data, ['id IN (?)' => (array) $ids]);
     }
 
     private function _delete($table, $where = []) {
-        return $this->_adapter()->delete($table, $where);
-    }
-
-    private function _getColumns($table = null) {
-        return array_keys($this->_getMetadata($table));
+        return $this->getAdapter()->delete($table, $where);
     }
 
     private function _getMetadata($table = null) {
@@ -422,7 +422,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private function _getReferences($table) {
         $cacheKey = $table.'-references';
         if (($data = $this->_getFromPersistentCache($cacheKey)) === false) {
-            $select = $this->_adapter()->select()
+            $select = $this->getAdapter()->select()
                 ->from('INFORMATION_SCHEMA.KEY_COLUMN_USAGE', ['COLUMN_NAME', 'REFERENCED_TABLE_NAME', 'REFERENCED_COLUMN_NAME'])
                 ->where('TABLE_SCHEMA = DATABASE()')
                 ->where('TABLE_NAME = ?', $table);
@@ -443,7 +443,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private function _getDependents($table) {
         $cacheKey = $table.'-dependents';
         if (($data = $this->_getFromPersistentCache($cacheKey)) === false) {
-            $select = $this->_adapter()->select()
+            $select = $this->getAdapter()->select()
                 ->from('INFORMATION_SCHEMA.KEY_COLUMN_USAGE', ['TABLE_NAME'])
                 ->where('REFERENCED_TABLE_SCHEMA = DATABASE()')
                 ->where('REFERENCED_TABLE_NAME = ?', $table);
@@ -467,7 +467,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         if (!$cache = $this->_getPersistentCache()) return null;
 
         // build the cacheId = port:host/dbname:schema.key  key usually is the table name plus an identifier
-        $dbConfig = $this->_adapter()->getConfig();
+        $dbConfig = $this->getAdapter()->getConfig();
         $port = av($dbConfig['options'], 'port') ?: av($dbConfig, 'port');
         $host = av($dbConfig['options'], 'host') ?: av($dbConfig, 'host');
         $cacheId = md5($port.':'.$host.'/'.$dbConfig['dbname'].':'.$this->_schema.':'.$key);
@@ -479,7 +479,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         if (!$cache = $this->_getPersistentCache()) return;
 
         // build the cacheId = port:host/dbname:schema.key  key usually is the table name plus an identifier
-        $dbConfig = $this->_adapter()->getConfig();
+        $dbConfig = $this->getAdapter()->getConfig();
         $port = av($dbConfig['options'], 'port') ?: av($dbConfig, 'port');
         $host = av($dbConfig['options'], 'host') ?: av($dbConfig, 'host');
         $cacheId = md5($port.':'.$host.'/'.$dbConfig['dbname'].':'.$this->_schema.':'.$key);

@@ -268,7 +268,7 @@ abstract class Entity_Abstract {
         $select = new CourseHorse_Db_Select($ds);
 
         $eagerFetchEntities = array_intersect_key(
-            array_merge(static::getReferenceProperties(), static::getDependentProperties()),
+            array_merge(static::_getReferenceProperties(), static::_getDependentProperties()),
             $eagerFetchProperties
         );
         $eagerFetchTables = transform_array($eagerFetchEntities, function($class) {
@@ -314,7 +314,7 @@ abstract class Entity_Abstract {
         if ($context) {
             list($entityClass, $property) = explode('.', $context);
 
-            if (!empty($entityClass::getDependentProperties()[$property])) {
+            if (!empty($entityClass::_getDependentProperties()[$property])) {
                 list($type, $where, $order, $limit) = $entityClass::_getDependentConfig($property);
                 foreach((array) $where as $clause => $value) {
                     $select->where(static::getDataSourceName() . '.' . $clause, $value);
@@ -330,7 +330,7 @@ abstract class Entity_Abstract {
         foreach ($rows as $i => $row) {
             $entity = first(av($row, $mainDataSourceName));
 
-            foreach ($entity::getReferenceProperties() as $property => $class) {
+            foreach ($entity::_getReferenceProperties() as $property => $class) {
                 // reference was not part of eager loading request
                 if (empty($eagerFetchEntities[$property])) continue;
 
@@ -343,7 +343,7 @@ abstract class Entity_Abstract {
                 $entity->$property = $referenceEntity;
             }
 
-            foreach ($entity::getDependentProperties() as $property => $class) {
+            foreach ($entity::_getDependentProperties() as $property => $class) {
                 // reference was not part of eager loading request
                 if (empty($eagerFetchEntities[$property])) continue;
 
@@ -369,10 +369,10 @@ abstract class Entity_Abstract {
         if ($context) {
             list($entityClass, $property) = explode('.', $context);
 
-            if (!empty($entityClass::getDependentProperties()[$property])) {
+            if (!empty($entityClass::_getDependentProperties()[$property])) {
                 list($type, $where, $order, $limit) = $entityClass::_getDependentConfig($property);
                 $childClass = 'Entity_' . $type;
-                if (!$key = av(array_flip($childClass::getReferenceProperties()), $entityClass)) {
+                if (!$key = av(array_flip($childClass::_getReferenceProperties()), $entityClass)) {
                     throw new Exception("Invalid eager loading configuration. Path '$property' does not reference " . get_called_class());
                 }
 
@@ -581,12 +581,12 @@ abstract class Entity_Abstract {
 
     private function _notifyReferences($type) {
         // One-to-Many Relationships (direct references)
-        foreach($this::getReferenceProperties() as $name => $class) {
+        foreach($this::_getReferenceProperties() as $name => $class) {
             call_user_func_array([$class, $type], [$this->{$name.'Id'}, $this]);
         }
 
         // Many-to-Many Relationships (linked references)
-        foreach($this::getDependentProperties() as $name => $class) {
+        foreach($this::_getDependentProperties() as $name => $class) {
             foreach($this->{$name} as $dependent) {
                 call_user_func_array([$class, $type], [$dependent->id, $this]);
             }
@@ -601,7 +601,7 @@ abstract class Entity_Abstract {
         return $config = static::$_dependents[$name] + $config;;
     }
 
-    private static function getReferenceProperties() {
+    private static function _getReferenceProperties() {
         $thisClass = get_called_class();
         $values = [];
         $reflection = new ReflectionClass($thisClass);
@@ -623,7 +623,7 @@ abstract class Entity_Abstract {
         return $values;
     }
 
-    private static function getDependentProperties() {
+    private static function _getDependentProperties() {
         $thisClass = get_called_class();
         return extract_pairs(static::$_dependents,
             function($config, $dependent) use($thisClass) {
