@@ -25,6 +25,7 @@ abstract class Entity_Abstract {
 
     public function __construct(array $data = []) {
         $this->_setArray($data);
+        $this->_snapshot();
     }
 
     public function __toString() {
@@ -148,7 +149,7 @@ abstract class Entity_Abstract {
 
     public function save(array $data = []) {
         $this->_setArray($data);
-        $isNew = (bool) $this->id;
+        $isNew = (bool) !$this->id;
         $this->preSave();
         static::getDataSource()->saveEntity($this);
         $isNew ? $this->postInsert() : $this->postUpdate();
@@ -188,10 +189,6 @@ abstract class Entity_Abstract {
         $dependent::dependentRemoved($dependent->id, $this);
     }
 
-    public function getSnapshot() {
-        return $this->_snapshot;
-    }
-
     public function toArray($options = null) {
         $values = [];
         $reflection = new ReflectionClass($this);
@@ -200,7 +197,7 @@ abstract class Entity_Abstract {
 
         foreach($properties as $property) {
             // Ignore these properties
-            if (in_array($property, ['_table', '_oldName', '_dependents', '_snapshot', '_dependentEntities', '_links'])) continue;
+            if (in_array($property, ['_table', '_dependents', '_snapshot', '_dependentEntities', '_links'])) continue;
 
             // Flatten IDs
             if ($property[0] == '_') {
@@ -225,8 +222,20 @@ abstract class Entity_Abstract {
         return $values;
     }
 
+    public function getSnapshot() {
+        $properties = $this->id ?
+            array_diff_assoc($this->_properties(), $this->_snapshot) :
+            $this->_snapshot;
+
+        unset($properties['id']);
+        return $properties;
+    }
+
     public function getDirty() {
-        $properties = $this->id ? array_diff_assoc($this->getSnapshot(), $this->toArray()) : $this->toArray();
+        $properties = $this->id ?
+            array_diff_assoc($this->_snapshot, $this->_properties()) :
+            array_filter($this->_properties(), function($var) { return !is_null($var); });
+
         unset($properties['id']);
         return $properties;
     }
@@ -560,8 +569,34 @@ abstract class Entity_Abstract {
     protected static function dependentRemoved($id, Entity_Abstract $dependent) {}
 
 
+    private function _properties() {
+        $data = [];
+        $reflection = new ReflectionClass($this);
+        $properties = $reflection->getProperties();
+        foreach ($properties as $property) {
+            $name = $property->name;
+
+            // ignore static properties
+            if ($property->isStatic()) continue;
+
+            // ignore these specific properties
+            if (in_array($name, ['_snapshot', '_dependentEntities', '_links'])) continue;
+
+            $value = $this->$name;
+
+            // Special handling for dates
+            if ($value instanceof CourseHorse_Date) {
+                $value = $value->toString();
+            }
+
+            $data[$name] = $value;
+        }
+
+        return $data;
+    }
+
     private function _snapshot() {
-        $this->_snapshot = $this->toArray();
+        $this->_snapshot = $this->_properties();
     }
 
     private function _setArray(array $data = []) {
