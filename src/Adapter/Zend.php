@@ -162,7 +162,12 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             if ($limit && count(av($groups, $row[$parentKey], [])) >= $limit) {
                 continue;
             }
-            $entity = $this->mapEntity($row, null, $dependentClass);
+
+            // individual dependent might already be in the cache
+            if (!$entity = $this->_getFromLocalCache($dependentClass, $row['id'])) {
+                $entity = $this->mapEntity($row, null, $dependentClass);
+            }
+
             $entity->_links[$parentClass::getEntityName()][] = $row[$parentKey];
             $groups[$row[$parentKey]][] = $entity;
             $entities[$row['id']] = $entity;
