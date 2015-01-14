@@ -247,7 +247,7 @@ abstract class Entity_Abstract {
 
     public function callHook($name) {
         #HACK to support hooks with zend db rows
-        $this->{$name};
+        call_user_func([$this, $name]);
     }
 
     public static function __callStatic($name, $arguments) {
@@ -492,7 +492,7 @@ abstract class Entity_Abstract {
 
     public static function callStaticHook($name, $id, Entity_Abstract $dependent) {
         #HACK to support hooks with zend db rows
-        static::$$name($id, $dependent);
+        call_user_func([get_called_class(), $name], $id, $dependent);
     }
 
 
@@ -636,8 +636,10 @@ abstract class Entity_Abstract {
 
         // Many-to-Many Relationships (linked references)
         foreach($this::_getDependentProperties() as $name => $class) {
-            foreach($this->{$name} as $dependent) {
-                call_user_func_array([$class, $type], [$dependent->id, $this]);
+            if (!empty(static::$_dependents['#'.$name])) {
+                foreach($this->{$name} as $dependent) {
+                    call_user_func_array([$class, $type], [$dependent->id, $this]);
+                }
             }
         }
     }
