@@ -603,6 +603,16 @@ abstract class Entity_Abstract {
                 $value = $value->toString();
             }
 
+            // Special handling for *_Id properties
+            if (preg_match('/_(.+)Id$/', $name, $matches)) {
+                $field = $matches[1];
+                // id field is null but entity exist, synchronize
+                if (!$value && ($reference = av($this->_dependentEntities, $field))) {
+                    $this->$name = $reference->id;
+                    $value = $reference->id;
+                }
+            }
+
             $data[$name] = $value;
         }
 
