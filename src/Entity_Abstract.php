@@ -85,7 +85,7 @@ abstract class Entity_Abstract {
             return $this->getRelatedEntity($name, $entityClass);
         }
         // Next if dependent config exists load dependent
-        elseif (!empty(static::$_dependents[$name])) {
+        elseif (static::_hasDependentConfig($name)) {
             return $this->getDependent($name);
         }
         // Next load special protected properties
@@ -113,7 +113,7 @@ abstract class Entity_Abstract {
         elseif (property_exists($this, $propIdName)) {
             return true;
         }
-        elseif (!empty(static::$_dependents[$name])) {
+        elseif (static::_hasDependentConfig($name)) {
             return true;
         }
         elseif (property_exists($this, $propName)) {
@@ -309,7 +309,7 @@ abstract class Entity_Abstract {
             // honor dependency rules
             $where = null;
             $joinWhere = '';
-            if (!empty(static::$_dependents[$property])) {
+            if (static::_hasDependentConfig($property)) {
                 list($type, $where, $order, $limit) = self::_getDependentConfig($property);
                 foreach((array) $where as $clause => $value) {
                     if (is_string($clause)) {
@@ -644,12 +644,19 @@ abstract class Entity_Abstract {
         }
     }
 
+    private static function _hasDependentConfig($name) {
+        if (!empty(static::$_dependents[$name])) return true;
+        if (!empty(static::$_dependents['#'.$name])) return true;
+        return false;
+    }
+
     private static function _getDependentConfig($name) {
         $config = [null, null, null, null];
-        if (empty(static::$_dependents[$name])) {
+        if (!static::_hasDependentConfig($name)) {
             throw new Exception("invalid eager loading configuration. path '$name' is not configured for " . get_called_class());
         }
-        return $config = static::$_dependents[$name] + $config;;
+        if (!empty(static::$_dependents[$name])) return static::$_dependents[$name] + $config;
+        if (!empty(static::$_dependents['#'.$name])) return static::$_dependents['#'.$name] + $config;
     }
 
     private static function _getReferenceProperties() {
