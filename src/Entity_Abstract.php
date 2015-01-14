@@ -551,7 +551,7 @@ abstract class Entity_Abstract {
             }
         }
 
-        return av($this->_dependentEntities, $field, []);
+        return av($this->_dependentEntities, $field);
     }
 
     protected function setRelatedEntityProperty($field, $value) {
