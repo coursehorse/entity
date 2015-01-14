@@ -320,7 +320,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         // entity -> database
         $data = [];
         foreach ($entity->getDirty() as $property => $value) {
-            if ($value instanceof \CourseHorse_Date) {
+            if ($value instanceof CourseHorse_Date) {
                 $value = $value->toString();
             }
 
@@ -529,7 +529,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         if (substr($key, -1) == '*') {
             foreach(self::$_localCache as $id => $data) {
                 $key = substr($key, 0, -1);
-                if (in($key, $id)) unset(self::$_localCache);
+                if (in($key, $id)) unset(self::$_localCache[$id]);
             }
         }
         unset(self::$_localCache[$key]);
