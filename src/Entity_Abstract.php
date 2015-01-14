@@ -19,8 +19,9 @@ abstract class Entity_Abstract {
     private $_snapshot = [];
     private $_dependentEntities = [];
 
-    protected static $_dependents = [];
     protected static $_table;
+    protected static $_maps = [];
+    protected static $_dependents = [];
 
 
     public function __construct(array $data = []) {
@@ -193,24 +194,28 @@ abstract class Entity_Abstract {
         $values = [];
         $reflection = new ReflectionClass($this);
         $properties = $reflection->getProperties();
-        $properties = transform_array($properties, 'name');
 
         foreach($properties as $property) {
-            // Ignore these properties
-            if (in_array($property, ['_table', '_dependents', '_snapshot', '_dependentEntities', '_links'])) continue;
+            $name = $property->name;
+
+            // ignore static properties
+            if ($property->isStatic()) continue;
+
+            // ignore these specific properties
+            if (in_array($name, ['_snapshot', '_dependentEntities', '_links'])) continue;
 
             // Flatten IDs
-            if ($property[0] == '_') {
-                $property = substr($property, 1);
+            if ($name[0] == '_') {
+                $name = substr($name, 1);
             }
 
             // Snake case names
-            $property[0] = strtolower($property[0]);
+            $name[0] = strtolower($name[0]);
             $scProperty = preg_replace_callback('/([A-Z])/', function($matches) {
                 return '_' . strtolower($matches[0]);
-            }, $property);
+            }, $name);
 
-            $values[$scProperty] = $this->__get($property);
+            $values[$scProperty] = $this->__get($name);
 
             if ($values[$scProperty] instanceof CourseHorse_Date) {
                 $values[$scProperty] = isset($options['date_format']) ?
@@ -224,7 +229,7 @@ abstract class Entity_Abstract {
 
     public function getSnapshot() {
         $properties = $this->id ?
-            array_diff_assoc($this->_properties(), $this->_snapshot) :
+            array_diff_assoc($this->_snapshot, $this->_properties()) :
             $this->_snapshot;
 
         unset($properties['id']);
@@ -233,7 +238,7 @@ abstract class Entity_Abstract {
 
     public function getDirty() {
         $properties = $this->id ?
-            array_diff_assoc($this->_snapshot, $this->_properties()) :
+            array_diff_assoc($this->_properties(), $this->_snapshot) :
             array_filter($this->_properties(), function($var) { return !is_null($var); });
 
         unset($properties['id']);
@@ -493,7 +498,16 @@ abstract class Entity_Abstract {
 
     protected function map($data) {}
 
-    protected function mapData() {}
+    protected function mapToDataSource($property, $value) {
+        // no custom mapping for this property
+        if (!array_key_exists($property, static::$_maps)) return;
+
+        return [static::$_maps[$property] => $value];
+    }
+
+    protected function postLoad() {
+        $this->_snapshot();
+    }
 
     protected function preSave() {}
 

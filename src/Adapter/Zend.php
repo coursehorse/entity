@@ -10,12 +10,14 @@ namespace CourseHorse\Adapter;
 
 use CourseHorse\DataSourceInterface;
 use CourseHorse\Entity_Abstract;
+use \CourseHorse_Date;
 use \CourseHorse_Db_Select;
 use \Zend_Db_Table_Abstract;
 use \Zend_Loader_Autoloader;
 use \ArrayObject;
 use \ArrayAccess;
 use \ReflectionClass;
+use \ReflectionMethod;
 use \Exception;
 
 class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
@@ -104,6 +106,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         // update existing row
         else {
             $this->_update($entity::getDataSourceName(), $entity->id, $data);
+            $this->_removeFromLocalCache($entity, $entity->id);
         }
 
         return $this->getEntity(get_class($entity), $entity->id, $entity);
@@ -241,6 +244,9 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $this->_map($data, $entity);
         $this->_saveToLocalCache($entity, $entity->id, $entity);
 
+        $postLoad = (new ReflectionMethod($entity, 'postLoad'))->getClosure($entity);
+        call_user_func($postLoad);
+
         return $entity;
     }
 
@@ -304,16 +310,28 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     private function _mapData(Entity_Abstract $entity) {
+        $reflection = new ReflectionClass($entity);
+
         // entity -> database
         $data = [];
         foreach ($entity->getDirty() as $property => $value) {
+            if ($value instanceof \CourseHorse_Date) {
+                $value = $value->toString();
+            }
+
+            if (is_array($value)) {
+                $value = implode(',', $value);
+            }
+
             $scProperty = camelToSnakeCase($property);
             $cscProperty = 'course_' . $scProperty;
             $rnProperty = 'course_' . lcfirst($entity::getEntityName()) . '_' . $scProperty;
+            $mappedProperty = null;
 
-            // subscriptionDate -> subscription_date
-            if (preg_match('/.+Date$/', $property) || preg_match('/^date$/', $property) || preg_match('/.+Time$/', $property) || preg_match('/^time$/', $property)) {
-                $data[$scProperty] = $value ? $value->toString() : null;
+            $map = $reflection->getMethod('mapToDataSource')->getClosure($entity);
+            if ($match = call_user_func($map, $property, $value)) {
+                $mappedProperty = key($match);
+                $data[$mappedProperty] = current($match);
             }
             // _userId -> user_id
             elseif (preg_match('/_(.+)Id$/', $property, $matches)) {
@@ -327,10 +345,6 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
                 $data[$scProperty] = $value;
             }
         }
-
-        $reflection = new ReflectionClass($entity);
-        $map = $reflection->getMethod('mapData')->getClosure($entity);
-        $data = (call_user_func($map, $data) ?: []) + $data;
 
         // filter out properties not in the table
         $columns = array_combine($this->getColumns(), array_fill(0, count($this->getColumns()), null));
