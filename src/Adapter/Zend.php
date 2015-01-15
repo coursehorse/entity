@@ -345,7 +345,10 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             }
             // _userId -> user_id
             elseif (preg_match('/_(.+)Id$/', $property, $matches)) {
-                $relatedEntityId = $value ?: ($entity->{$matches[1]} ? $entity->{$matches[1]}->id : null);
+                $relatedEntityId = $value;
+                if (is_null($relatedEntityId)) {
+                    $relatedEntityId = ($entity->{$matches[1]} ? $entity->{$matches[1]}->id : null);
+                }
                 $data[$cscProperty] = $relatedEntityId;
                 $data[$scProperty] = $relatedEntityId;
                 $data[$rnProperty] = $relatedEntityId;
