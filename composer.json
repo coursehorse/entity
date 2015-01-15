@@ -7,6 +7,14 @@
         {
             "name": "Emil Diaz",
             "email": "emil.h.diaz@gmail.com"
+        },
+        {
+            "name": "Jonathan Baxter",
+            "email": "jonathan.t.baxter@gmail.com"
+        },
+        {
+            "name": "Jay Tyrrell",
+            "email": "tyrrell.jay@gmail.com"
         }
     ],
     "require": {
