@@ -106,15 +106,16 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         // update existing row
         else {
             $this->_update($entity::getDataSourceName(), $entity->id, $data);
-            $this->_removeFromLocalCache($entity, $entity->id);
         }
 
+        // clear from cache so that the entity can be reloaded from the data source
+        $this->_removeFromLocalCache($entity, '*');
         return $this->getEntity(get_class($entity), $entity->id, $entity);
     }
 
     public function deleteEntity(Entity_Abstract $entity) {
         $this->_delete($entity::getDataSourceName(), ["id = ?" => $entity->id]);
-        $this->_removeFromLocalCache($entity, $entity->id, '*');
+        $this->_removeFromLocalCache($entity, '*');
     }
 
     public function getDependents($parentClass, $ids, $dependentClass, $where = [], $order = null, $limit = null) {
@@ -175,10 +176,13 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
         $this->_saveToLocalCache($parentClass, $ids, $entities, ['dependents', $dependentClass, $whereHash]);
         foreach((array) $ids as $id) {
-            $this->_saveToLocalCache($parentClass, $id, av($groups, $id, []), ['dependents', $dependentClass, $whereHash]);
+            // If limit == 1 we need to flatten the result to a single entity as opposed to an array
+            $groupedEntities = ($limit == 1) ? first(av($groups, $id)) : av($groups, $id);
+            $default = ($limit == 1) ? null : [];
+            $this->_saveToLocalCache($parentClass, $id, $groupedEntities ?: $default, ['dependents', $dependentClass, $whereHash]);
         }
 
-        return $entities;
+        return $this->_getFromLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash]);
     }
 
     public function addDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
@@ -195,7 +199,10 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         }
 
         $this->_insert($linkTableName, [$dependentKey => $dependent->id, $parentKey => $parent->id]);
-        $this->_removeFromLocalCache($parent, $parent->id, 'dependents');
+
+        // link could be by-directional so clear both caches
+        $this->_removeFromLocalCache($parent, ['dependents', get_class($dependent), '*']);
+        $this->_removeFromLocalCache($dependent, ['dependents', get_class($parent), '*']);
     }
 
     public function deleteDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
@@ -212,12 +219,23 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         }
 
         $this->_delete($linkTableName, ["$dependentKey = ?" => $dependent->id, "$parentKey = ?" => $parent->id]);
-        $this->_removeFromLocalCache($parent, $parent->id, 'dependents');
+
+        // link could be by-directional so clear both caches
+        $this->_removeFromLocalCache($parent, ['dependents', get_class($dependent), '*']);
+        $this->_removeFromLocalCache($dependent, ['dependents', get_class($parent), '*']);
     }
 
     public function cache($parentClass, $ids, $entities, $dependentClass, $where, $order, $limit) {
         $whereHash = md5(serialize($where) . serialize($order) . serialize($limit));
         $this->_saveToLocalCache($parentClass, $ids, $entities, ['dependents', $dependentClass, $whereHash]);
+    }
+
+    public function getAdapter() {
+        return $this->_db;
+    }
+
+    public function getColumns($table = null) {
+        return array_keys($this->_getMetadata($table));
     }
 
     public static function clearCache() {
@@ -265,14 +283,6 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $entities[$row['id']] = $this->mapEntity($row, null, $entityClass);
         }
         return $entities;
-    }
-
-    public function getAdapter() {
-        return $this->_db;
-    }
-
-    public function getColumns($table = null) {
-        return array_keys($this->_getMetadata($table));
     }
 
     private function _map($data, Entity_Abstract $entity) {
@@ -520,19 +530,38 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         self::$_localCache[$key] = $data;
     }
 
-    private function _removeFromLocalCache($entityClass, $id, $additionalKeys = []) {
+    private function _removeFromLocalCache(Entity_Abstract $entity, $additionalKeys = []) {
         if (!self::$_cacheEnabled) return null;
-        $key = $this->_getKey($entityClass, $id, $additionalKeys);
+        $id = $entity->id;
 
-        // remove wildcard matches
-        // ex: parent_table.dependents.dependent_table.id.*
-        if (substr($key, -1) == '*') {
+        // wildcard matches
+        if ($additionalKeys == '*') {
+            // unset the exact key match (need to ignore additionalKeys for this)
+            $key = $this->_getKey($entity, $id);
+            unset(self::$_localCache[$key]);
+
+            // unset wildcard matches ex: Entity_Course.123.dependents[.Entity_Section].whereHash
+            $key = '.' . get_class($entity);
             foreach(self::$_localCache as $id => $data) {
-                $key = substr($key, 0, -1);
                 if (in($key, $id)) unset(self::$_localCache[$id]);
             }
         }
-        unset(self::$_localCache[$key]);
+        // targeted wildcard matches
+        elseif (substr($additionalKeys, -1) == '*') {
+            $additionalKeys = substr($additionalKeys, 0, -1);
+
+            // unset wildcard matches within a domain ex: [Entity_Course.123.dependents].Entity_Section.whereHash
+            $key = $this->_getKey($entity, $id, $additionalKeys);
+            foreach(self::$_localCache as $id => $data) {
+                if (in($key, $id)) unset(self::$_localCache[$id]);
+            }
+        }
+        // exact match
+        else {
+            // unset the exact key match
+            $key = $this->_getKey($entity, $id, $additionalKeys);
+            unset(self::$_localCache[$key]);
+        }
     }
 
     private function _isInLocalCache($entityClass, $id, $additionalKeys = []) {
@@ -545,7 +574,8 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private function _getKey($entityClass, $ids, $additionalKeys = []) {
         if (is_array($ids)) array_walk($ids, 'intval');
         if (is_numeric($ids)) $ids = (int) $ids;
-        return implode('.', array_merge([$entityClass::getEntityName(), serialize($ids)], (array) $additionalKeys));
+        $entityClass = is_object($entityClass) ? get_class($entityClass) : $entityClass;
+        return implode('.', array_merge([$entityClass, serialize($ids)], (array) $additionalKeys));
     }
 
 
