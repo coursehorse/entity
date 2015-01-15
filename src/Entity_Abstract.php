@@ -10,7 +10,6 @@ namespace CourseHorse;
 
 use CourseHorse\Adapter\Zend;
 use \CourseHorse_Date;
-use \CourseHorse_Db_Select;
 use \ReflectionClass;
 use \Exception;
 
