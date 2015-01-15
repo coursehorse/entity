@@ -22,7 +22,6 @@ abstract class Entity_Abstract {
     protected static $_maps = [];
     protected static $_dependents = [];
 
-
     public function __construct(array $data = []) {
         $this->_setArray($data);
         $this->_snapshot();
@@ -38,23 +37,25 @@ abstract class Entity_Abstract {
         elseif (isset($this->uri)) {
             return $this->uri;
         }
-        else
+        else {
             return "";
+        }
     }
 
     public function __set($name, $value = null) {
-        $methodName = 'set'.ucfirst($name);
-        $propName = '_'.$name.'Id';
+        $methodName = 'set' . ucfirst($name);
+        $propName = '_' . $name . 'Id';
+
         if (method_exists($this, $methodName)) {
-            call_user_func_array(array($this, $methodName),array($value));
+            call_user_func_array([$this, $methodName], [$value]);
         }
         elseif (property_exists($this, $propName)) {
             $this->setRelatedEntityProperty($name, $value);
         }
-        elseif(preg_match('/.+Date$/', $name) || preg_match('/^date$/', $name)) { // Can be delete after replace all date strings to CourseHorse_Date object
+        elseif (preg_match('/.+Date$/', $name) || preg_match('/^date$/', $name)) { // Can be delete after replace all date strings to CourseHorse_Date object
             $this->_setDateField($name, $value);
         }
-        elseif(preg_match('/.+Time$/', $name) || preg_match('/^time$/', $name)) {
+        elseif (preg_match('/.+Time$/', $name) || preg_match('/^time$/', $name)) {
             $this->_setDateField($name, $value);
         }
         elseif (property_exists($this, $name)) {
@@ -66,17 +67,17 @@ abstract class Entity_Abstract {
     }
 
     public function __get($name) {
-        $methodName = 'get'.ucfirst($name);
-        $propName = '_'.$name;
-        $propIdName = '_'.$name.'Id';
+        $methodName = 'get' . ucfirst($name);
+        $propName = '_' . $name;
+        $propIdName = '_' . $name . 'Id';
 
         // Explicit getter always has highest precedence
         if (method_exists($this, $methodName)) {
-            return call_user_func(array($this, $methodName));
+            return call_user_func([$this, $methodName]);
         }
         // Next if property ID exists load related entity
         elseif (property_exists($this, $propIdName)) {
-            $entityClass = is_class('Entity_'.ucfirst($name)) ? 'Entity_'.ucfirst($name) : get_class($this).ucfirst($name);
+            $entityClass = is_class('Entity_' . ucfirst($name)) ? 'Entity_' . ucfirst($name) : get_class($this) . ucfirst($name);
             return $this->getRelatedEntity($name, $entityClass);
         }
         // Next if dependent config exists load dependent
@@ -98,9 +99,9 @@ abstract class Entity_Abstract {
     }
 
     public function __isset($name) {
-        $methodName = 'get'.ucfirst($name);
-        $propName = '_'.$name;
-        $propIdName = '_'.$name.'Id';
+        $methodName = 'get' . ucfirst($name);
+        $propName = '_' . $name;
+        $propIdName = '_' . $name . 'Id';
 
         if (method_exists($this, $methodName)) {
             return true;
@@ -123,9 +124,10 @@ abstract class Entity_Abstract {
     }
 
     public function __call($name, array $arguments) {
-        $methodName = 'get'.ucfirst($name);
+        $methodName = 'get' . ucfirst($name);
+
         if (method_exists($this, $methodName)) {
-            return call_user_func_array(array($this, $methodName), $arguments);
+            return call_user_func_array([$this, $methodName], $arguments);
         }
         else {
             return self::__callStatic($name, $arguments);
@@ -165,10 +167,13 @@ abstract class Entity_Abstract {
     }
 
     public function copy(Entity_Abstract $entity) {
-        if (get_class($this) !== get_class($entity))
+        if (get_class($this) !== get_class($entity)) {
             throw new Exception('Can\'t copy different objects');
+        }
+
         foreach (get_object_vars($entity) as $key => $value) {
             if ($key == 'id') continue;
+
             $this->$key = $value;
         }
     }
@@ -213,9 +218,7 @@ abstract class Entity_Abstract {
             $values[$scProperty] = $this->__get($name);
 
             if ($values[$scProperty] instanceof CourseHorse_Date) {
-                $values[$scProperty] = isset($options['date_format']) ?
-                    $values[$scProperty]->toString($options['date_format']) :
-                    $values[$scProperty]->toString();
+                $values[$scProperty] = isset($options['date_format']) ? $values[$scProperty]->toString($options['date_format']) : $values[$scProperty]->toString();
             }
         }
 
@@ -223,9 +226,7 @@ abstract class Entity_Abstract {
     }
 
     public function getSnapshot() {
-        $properties = $this->id ?
-            array_diff_assoc($this->_snapshot, $this->_properties()) :
-            $this->_snapshot;
+        $properties = $this->id ? array_diff_assoc($this->_snapshot, $this->_properties()) : $this->_snapshot;
 
         unset($properties['id']);
         return $properties;
@@ -245,10 +246,10 @@ abstract class Entity_Abstract {
     public static function __callStatic($name, $arguments) {
         // Check for an entity loader method
         if (strpos($name, 'getAll') !== false) {
-            $methodName = 'getEntities'.ucfirst(substr($name,6));
+            $methodName = 'getEntities' . ucfirst(substr($name, 6));
         }
         elseif (strpos($name, 'getBy') !== false) {
-            $methodName = 'getEntityBy'.ucfirst(substr($name,5));
+            $methodName = 'getEntityBy' . ucfirst(substr($name, 5));
         }
         else {
             $methodName = $name;
@@ -258,7 +259,7 @@ abstract class Entity_Abstract {
             throw new Exception("Unknown entity loading method '$name'");
         }
 
-        return call_user_func_array(array(static::getDataSource(), $methodName), $arguments);
+        return call_user_func_array([static::getDataSource(), $methodName], $arguments);
     }
 
     public static function load($ids) {
@@ -268,7 +269,6 @@ abstract class Entity_Abstract {
 
     public static function loadProgressive($ids, $eagerFetchProperties = [], $context = null, $contextData= null) {
         # Eager load in progressive selects
-
         $ds = static::getDataSource();
 
         // Otherwise use progressive loading
@@ -351,7 +351,6 @@ abstract class Entity_Abstract {
         call_user_func([get_called_class(), $name], $id, $dependent);
     }
 
-
     protected function map($data) {}
 
     protected function mapToDataSource($property, $value) {
@@ -432,11 +431,11 @@ abstract class Entity_Abstract {
 
     protected static function dependentRemoved($id, Entity_Abstract $dependent) {}
 
-
     private function _properties() {
         $data = [];
         $reflection = new ReflectionClass($this);
         $properties = $reflection->getProperties();
+
         foreach ($properties as $property) {
             $name = $property->name;
 
@@ -516,7 +515,7 @@ abstract class Entity_Abstract {
             throw new Exception("invalid eager loading configuration. path '$name' is not configured for " . get_called_class());
         }
         if (!empty(static::$_dependents[$name])) return static::$_dependents[$name] + $config;
-        if (!empty(static::$_dependents['#'.$name])) return static::$_dependents['#'.$name] + $config;
+        if (!empty(static::$_dependents['#' . $name])) return static::$_dependents['#' . $name] + $config;
     }
 
     private static function _getReferenceProperties() {
@@ -531,8 +530,8 @@ abstract class Entity_Abstract {
             if (($property[0] == '_') && (substr($property, -2) == 'Id')) {
                 $name = substr($property, 1, -2);
                 $class = null;
-                if (is_class('Entity_'.ucfirst($name))) $class = 'Entity_'.ucfirst($name);
-                if (is_class($thisClass.ucfirst($name))) $class = $thisClass.ucfirst($name);
+                if (is_class('Entity_' . ucfirst($name))) $class = 'Entity_' . ucfirst($name);
+                if (is_class($thisClass . ucfirst($name))) $class = $thisClass . ucfirst($name);
                 if (!$class) continue;
                 $values[$name] = $class;
             }
