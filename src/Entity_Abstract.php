@@ -232,10 +232,7 @@ abstract class Entity_Abstract {
     }
 
     public function getDirty() {
-        $properties = $this->id ?
-            array_diff_assoc($this->_properties(), $this->_snapshot) :
-            array_filter($this->_properties(), function($var) { return !is_null($var); });
-
+        $properties = $this->id ? diff($this->_properties(), $this->_snapshot) : array_clear_nulls($this->_properties());
         unset($properties['id']);
         return $properties;
     }
