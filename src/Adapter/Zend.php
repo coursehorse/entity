@@ -170,7 +170,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             }
 
             $entity->_links[$parentClass::getEntityName()][] = $row[$parentKey];
-            $groups[$row[$parentKey]][] = $entity;
+            $groups[$row[$parentKey]][$row['id']] = $entity;
             $entities[$row['id']] = $entity;
         };
 

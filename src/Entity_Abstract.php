@@ -267,13 +267,16 @@ abstract class Entity_Abstract {
         return $ds->getEntities(get_called_class(), (array) $ids);
     }
 
-    public static function loadProgressive($ids, $eagerFetchProperties = [], $context = null, $contextData= null) {
+    public static function loadProgressive($ids, $eagerFetchProperties = [], $context = null, $contextData = []) {
         # Eager load in progressive selects
         $ds = static::getDataSource();
 
         // Otherwise use progressive loading
         if ($context) {
             list($type, $where, $order, $limit) = self::_getDependentConfig($context);
+
+            // Add additional contextData if present
+            $where = $contextData + $where;
             $entities = call_user_func_array([$ds, 'getDependents'], [get_called_class(), (array) $ids, 'Entity_' . $type, $where, $order, $limit]);
 
             // Need to make sure this is an array of objects or just null
@@ -286,7 +289,14 @@ abstract class Entity_Abstract {
         // Eager load properties relying on good old recursion to traverse
         // the property path. Ignore if no entities available to recurs
         if (!empty($entities)) {
-            foreach((array) $eagerFetchProperties as $propertyPath) {
+            foreach((array) $eagerFetchProperties as $key => $propertyPath) {
+                // adjust for associative entries
+                $propertyOptions = [];
+                if (is_array($propertyPath)) {
+                    $propertyOptions = $propertyPath;
+                    $propertyPath = $key;
+                }
+
                 if (!$propertyPath) continue;
 
                 $propertyPathParts = explode('.', $propertyPath);
@@ -313,7 +323,7 @@ abstract class Entity_Abstract {
                 if (!empty($vars['_dependents'][$currentPathPart])) {
                     $ids = array_unique(transform_array($entities, 'id'));
                     // This will warm the data store caches
-                    $entityName::loadProgressive($ids, [$propertyPath], $currentPathPart);
+                    $entityName::loadProgressive($ids, [$propertyPath], $currentPathPart, $propertyOptions);
                     continue;
                 }
 
@@ -510,7 +520,7 @@ abstract class Entity_Abstract {
     }
 
     private static function _getDependentConfig($name) {
-        $config = [null, null, null, null];
+        $config = [null, [], null, null];
         if (!static::_hasDependentConfig($name)) {
             throw new Exception("invalid eager loading configuration. path '$name' is not configured for " . get_called_class());
         }
