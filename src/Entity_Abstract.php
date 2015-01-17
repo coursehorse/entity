@@ -21,6 +21,7 @@ abstract class Entity_Abstract {
     protected static $_table;
     protected static $_maps = [];
     protected static $_dependents = [];
+    protected static $_sources = [];
 
     public function __construct(array $data = []) {
         $this->_setArray($data);
@@ -352,8 +353,11 @@ abstract class Entity_Abstract {
     }
 
     public static function getDataSourceName() {
-        $name = static::$_table ? substr(static::$_table, 0, -5) : static::getEntityName();
-        return camelToSnakeCase($name);
+        $class = get_called_class();
+        if (!$source = av(static::$_sources, $class)) {
+            static::$_sources[$class] = $source = camelToSnakeCase(static::$_table ? substr(static::$_table, 0, -5) : static::getEntityName());
+        }
+        return $source;
     }
 
     public static function callStaticHook($name, $id, Entity_Abstract $dependent) {

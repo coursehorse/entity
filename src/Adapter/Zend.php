@@ -52,8 +52,6 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $select->where($dsName . '.id IN (?)', (array) $ids);
             $select->expand();
 
-            $sql = (string) $select;
-
             $rows = $this->_query($select);
             $entities = transform_array($select->normalize($rows), function($row, $rowId) {
                 return transform_array($row, function($subrows, $tableName) {
@@ -283,36 +281,31 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private function _map($data, Entity_Abstract $entity) {
         // database -> entity
         $reflection = new ReflectionClass($entity);
-        $properties = $reflection->getProperties();
 
         // If $data is a row object, turn into an array first
         if (is_object($data)) {
             $data = $data->toArray();
         }
 
-        foreach ($properties as $property) {
-            $propertyString = $property->name;
-            $scProperty = camelToSnakeCase($propertyString);
-            $cscProperty = 'course_' . $scProperty;
-            $rnProperty = 'course_' . lcfirst($entity::getEntityName()) . '_' . $scProperty;
+        $metadatas = $this->_getMetadata($entity::getDataSourceName());
 
-            // id -> id
-            if (array_key_exists($propertyString, $data)) {
-                $entity->$propertyString = $data[$propertyString];
+        foreach ($metadatas as $column => $metadata) {
+            $value = av($data, $column);
+            $type = av($metadata, 'DATA_TYPE');
+
+            // could not map column to entity property
+            if (!$property = av($metadata, 'MAP')) {
+                continue;
             }
-            // _userId -> user_id
-            // allowSyndication -> allow_syndication
-            elseif (array_key_exists($scProperty, $data)) {
-                $entity->$propertyString = $data[$scProperty];
+
+            // initialize date types
+            if (in_array($type, ['datetime', 'timestamp', 'date', 'time'])) {
+                $value = new CourseHorse_Date($value);
             }
-            // _uriId -> course_uri_id
-            elseif (array_key_exists($cscProperty, $data)) {
-                $entity->$propertyString = $data[$cscProperty];
-            }
-            // type -> course_category_type_id
-            elseif (array_key_exists($rnProperty, $data)) {
-                $entity->$propertyString = $data[$rnProperty];
-            }
+
+            $prop = $reflection->getProperty($property);
+            $prop->setAccessible(true);
+            $prop->setValue($entity, $value);
         }
 
         $map = $reflection->getMethod('map')->getClosure($entity);
@@ -367,24 +360,35 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     private function _getLinkTable($parentClass, $dependentClass) {
-        $parentReferences = $this->_getDependents($parentClass::getDataSourceName());
-        $dependentReferences = $this->_getDependents($dependentClass::getDataSourceName());
+        $cacheKey = $parentClass . '.link.' . $dependentClass;
+        if (($table = $this->_getFromPersistentCache($cacheKey)) === false) {
+            $parentReferences = $this->_getDependents($parentClass::getDataSourceName());
+            $dependentReferences = $this->_getDependents($dependentClass::getDataSourceName());
+            $matches = array_intersect($parentReferences, $dependentReferences);
 
-        if (empty($parentReferences)) return null;
+            if (empty($parentReferences)) {
+                $table = null;
+            }
+            else if (empty($dependentReferences)) {
+                $table = null;
+            }
+            else if (in_array($dependentClass::getDataSourceName(), $parentReferences)) {
+                $table = null;
+            }
+            else if (count($matches) > 1) {
+                $matches = array_filter($matches, function ($match) use ($dependentClass){
+                    return strpos($match, strtolower($dependentClass::getEntityName())) !== false;
+                });
+                $table = first(($matches));
+            }
+            else if (count($matches) == 1) {
+                $table = first($matches);
+            }
 
-        if (empty($dependentReferences)) return null;
-
-        if (in_array($dependentClass::getDataSourceName(), $parentReferences)) return null;
-
-        $matches = array_intersect($parentReferences, $dependentReferences);
-
-        if (count($matches) > 1) {
-            $matches = array_filter($matches, function ($match) use ($dependentClass){
-                return strpos($match, strtolower($dependentClass::getEntityName())) !== false;
-            });
+            $this->_saveToPersistentCache($cacheKey, $table);
         }
 
-        return first(($matches));
+        return $table;
     }
 
     private function _query($select) {
@@ -404,7 +408,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     private function _selectOne($table, $id, $ignoreFields = []) {
-        $cols = $this->getColumns();
+        $cols = $this->getColumns($table);
         foreach ($ignoreFields as $field) {
             $key = array_search($field, $cols);
             unset($cols[$key]);
@@ -429,19 +433,50 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     private function _getMetadata($table = null) {
-        // tricking the parent class into thinking
-        // that it needs to load the metadata
-        $originalMetadata = $this->_metadata;
-        $originalName = $this->_name;
+        $cacheKey = $table.'-metadata';
+        if (($metaData = $this->_getFromPersistentCache($cacheKey)) === false) {
+            // tricking the parent class into thinking
+            // that it needs to load the metadata
+            $originalMetadata = $this->_metadata;
+            $originalName = $this->_name;
+            $this->_name = $table ?: $originalName;
+            $this->_metadata = null;
+            parent::_setupMetadata();
+            $metaData = $this->_metadata;
+            $this->_name = $table ?: $originalName;
+            $this->_metadata = $originalMetadata;
 
-        $this->_name = $table ?: $originalName;
-        $this->_metadata = null;
+            $entityClass = $this->getEntityClass($table);
+            $reflection = new ReflectionClass($entityClass);
+            $properties = $reflection->getProperties();
 
-        parent::_setupMetadata();
-        $metaData = $this->_metadata;
+            foreach ($properties as $prop) {
+                $property = $prop->name;
+                $column = $property;
+                $scColumn = camelToSnakeCase($property);
+                $cscColumn = 'course_' . $scColumn;
+                $rnColumn = 'course_' . lcfirst($entityClass::getEntityName()) . '_' . $scColumn;
 
-        $this->_name = $table ?: $originalName;
-        $this->_metadata = $originalMetadata;
+                // id -> id
+                if (array_key_exists($column, $metaData)) {
+                    $metaData[$column]['MAP'] = $property;
+                }
+                // _userId -> user_id , allowSyndication -> allow_syndication
+                elseif (array_key_exists($scColumn, $metaData)) {
+                    $metaData[$scColumn]['MAP'] = $property;
+                }
+                // _uriId -> course_uri_id
+                elseif (array_key_exists($cscColumn, $metaData)) {
+                    $metaData[$cscColumn]['MAP'] = $property;
+                }
+                // type -> course_category_type_id
+                elseif (array_key_exists($rnColumn, $metaData)) {
+                    $metaData[$rnColumn]['MAP'] = $property;
+                }
+            }
+
+            $this->_saveToPersistentCache($cacheKey, $metaData);
+        }
 
         return $metaData;
     }
@@ -497,7 +532,13 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $dbConfig = $this->getAdapter()->getConfig();
         $port = av($dbConfig['options'], 'port') ?: av($dbConfig, 'port');
         $host = av($dbConfig['options'], 'host') ?: av($dbConfig, 'host');
-        $cacheId = md5($port.':'.$host.'/'.$dbConfig['dbname'].':'.$this->_schema.':'.$key);
+        $cacheId = $port.':'.$host.'/'.$dbConfig['dbname'].':'.$this->_schema.':'.$key;
+        $cacheId = md5($cacheId);
+
+        // load from local cache
+        if (self::$_cacheEnabled && array_key_exists($cacheId, self::$_localCache)) {
+            return av(self::$_localCache, $cacheId);
+        }
 
         return $this->_metadataCache->load($cacheId);
     }
@@ -510,6 +551,11 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $port = av($dbConfig['options'], 'port') ?: av($dbConfig, 'port');
         $host = av($dbConfig['options'], 'host') ?: av($dbConfig, 'host');
         $cacheId = md5($port.':'.$host.'/'.$dbConfig['dbname'].':'.$this->_schema.':'.$key);
+
+        // save to local cache as well
+        if (self::$_cacheEnabled) {
+            self::$_localCache[$cacheId] = $data;
+        }
 
         $this->_metadataCache->save($data, $cacheId);
     }
