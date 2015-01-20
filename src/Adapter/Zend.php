@@ -267,9 +267,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $this->_map($data, $entity);
         $this->_saveToLocalCache($entity, $entity->id, $entity);
 
-        if (!$postLoad = av(self::$_reflectCache, $entityClass . '_postLoad')) {
-            self::$_reflectCache[$entityClass . '_postLoad'] = $postLoad = $this->_getReflection($entity)->getMethod('postLoad')->getClosure($entity);
-        }
+        $postLoad = (new ReflectionClass($entity))->getMethod('postLoad')->getClosure($entity);
         call_user_func($postLoad);
 
         return $entity;
@@ -285,11 +283,6 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $entities[$row['id']] = $this->mapEntity($row, null, $entityClass);
         }
         return $entities;
-    }
-
-    private function _getReflection(Entity_Abstract $entity) {
-        $entityClass = get_class($entity);
-        return av(self::$_reflectCache, $entityClass, new ReflectionClass($entity));
     }
 
     private function _map($data, Entity_Abstract $entity) {
@@ -366,7 +359,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         }
 
         // filter out properties not in the table
-        $columns = array_combine($this->getColumns(), array_fill(0, count($this->getColumns()), null));
+        $columns = array_combine($this->getColumns($entity::getDataSourceName()), array_fill(0, count($this->getColumns($entity::getDataSourceName())), null));
         $data = array_intersect_key($data, $columns);
 
         return $data;
@@ -460,11 +453,12 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $this->_metadata = $originalMetadata;
 
             $entityClass = $this->getEntityClass($table);
-            $reflection = new ReflectionClass($entityClass);
-            $properties = $reflection->getProperties();
+            if (!$properties = av(self::$_reflectCache, $entityClass . '_properties')) {
+                $reflection = new ReflectionClass($entityClass);
+                $properties = self::$_reflectCache[$entityClass . '_properties'] = transform_array($reflection->getProperties(), 'name');
+            }
 
-            foreach ($properties as $prop) {
-                $property = $prop->name;
+            foreach ($properties as $property) {
                 $column = $property;
                 $scColumn = camelToSnakeCase($property);
                 $cscColumn = 'course_' . $scColumn;
