@@ -322,18 +322,12 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $prop->setValue($entity, $value);
         }
 
-        $entityClass = get_class($entity);
-        if (!$map = av(self::$_reflectCache, $entityClass . '_map')) {
-            self::$_reflectCache[$entityClass . '_map'] = $map = $this->_getReflection($entity)->getMethod('map')->getClosure($entity);
-        }
+        $map = (new ReflectionClass($entity))->getMethod('map')->getClosure($entity);
         call_user_func($map, $data);
     }
 
     private function _mapData(Entity_Abstract $entity) {
-        $entityClass = get_class($entity);
-        if (!$mapToDataSource = av(self::$_reflectCache, $entityClass . '_mapToDataSource')) {
-            self::$_reflectCache[$entityClass . '_mapToDataSource'] = $mapToDataSource = $this->_getReflection($entity)->getMethod('mapToDataSource')->getClosure($entity);
-        }
+        $mapToDataSource = (new ReflectionClass($entity))->getMethod('mapToDataSource')->getClosure($entity);
 
         // entity -> database
         $data = [];
