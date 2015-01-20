@@ -18,6 +18,7 @@ abstract class Entity_Abstract {
     private $_snapshot = [];
     private $_references = [];
 
+    private static $_reflectCache = [];
     protected static $_table;
     protected static $_maps = [];
     protected static $_dependents = [];
@@ -193,8 +194,9 @@ abstract class Entity_Abstract {
 
     public function toArray($options = null) {
         $values = [];
-        $reflection = new ReflectionClass($this);
-        $properties = $reflection->getProperties();
+        if (!$properties = av(self::$_reflectCache, get_called_class() . '_properties')) {
+            self::$_reflectCache[get_called_class() . '_properties'] = $properties = (new ReflectionClass($this))->getProperties();
+        }
 
         foreach($properties as $property) {
             $name = $property->name;
@@ -274,11 +276,11 @@ abstract class Entity_Abstract {
 
         // Otherwise use progressive loading
         if ($context) {
-            list($type, $where, $order, $limit) = self::_getDependentConfig($context);
+            list($type, $where, $order, $limit, $count) = self::_getDependentConfig($context);
 
             // Add additional contextData if present
             $where = $contextData + $where;
-            $entities = call_user_func_array([$ds, 'getDependents'], [get_called_class(), (array) $ids, 'Entity_' . $type, $where, $order, $limit]);
+            $entities = call_user_func_array([$ds, 'getDependents'], [get_called_class(), (array) $ids, 'Entity_' . $type, $where, $order, $limit, $count]);
 
             // Need to make sure this is an array of objects or just null
             $entities = is_object($entities) ? [$entities] : $entities;
@@ -390,7 +392,7 @@ abstract class Entity_Abstract {
 
     protected function getDependent($name, array $additionalWhere = []) {
         // this will verify that a config exists for this dependent
-        list($type, $where, $order, $limit) = self::_getDependentConfig($name);
+        list($type, $where, $order, $limit, $count) = self::_getDependentConfig($name);
 
         $entities = $this->getDataSource()->getDependents(
             get_class($this),
@@ -398,7 +400,8 @@ abstract class Entity_Abstract {
             'Entity_' . $type,
             array_merge($where ?: [], $additionalWhere),
             $order,
-            $limit
+            $limit,
+            $count
         );
 
         return $entities;
@@ -524,7 +527,7 @@ abstract class Entity_Abstract {
     }
 
     private static function _getDependentConfig($name) {
-        $config = [null, [], null, null];
+        $config = [null, [], null, null, false];
         if (!static::_hasDependentConfig($name)) {
             throw new Exception("invalid eager loading configuration. path '$name' is not configured for " . get_called_class());
         }

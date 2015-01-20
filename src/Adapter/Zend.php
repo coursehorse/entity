@@ -17,12 +17,12 @@ use \Zend_Loader_Autoloader;
 use \ArrayObject;
 use \ArrayAccess;
 use \ReflectionClass;
-use \ReflectionMethod;
 use \Exception;
 
 class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private static $_cacheEnabled = true;
     private static $_localCache = [];
+    private static $_reflectCache = [];
     protected static $entityName;
 
     public function __construct($config = array(), $name = null) {
@@ -116,16 +116,21 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $this->_removeFromLocalCache($entity, $entity->id, '*');
     }
 
-    public function getDependents($parentClass, $ids, $dependentClass, $where = [], $order = null, $limit = null) {
+    public function getDependents($parentClass, $ids, $dependentClass, $where = [], $order = null, $limit = null, $count = false) {
         if (!$ids) return null;
 
-        $whereHash = md5(serialize($where) . serialize($order) . serialize($limit));
+        $whereHash = md5(serialize($where) . serialize($order) . serialize($limit) . serialize($count));
 
         if ($this->_isInLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash])) {
             return $this->_getFromLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash]);
         }
 
-        $select = $this->getAdapter()->select()->from(['a' => $dependentClass::getDataSourceName()]);
+        $select = $this->getAdapter()->select();
+        if ($count) {
+            $select->from(['a' => $dependentClass::getDataSourceName()], ['count' => 'count(1)']);
+        } else {
+            $select->from(['a' => $dependentClass::getDataSourceName()]);
+        }
 
         // Add join clause
         if ($linkTableName = $this->_getLinkTable($parentClass, $dependentClass)) {
@@ -153,6 +158,8 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
         // Add limit clause
         $rows = $this->_query($select);
+        if ($count) return (int) av(first($rows), 'count', 0);
+
         $entities = [];
         $groups = [];
 
@@ -260,7 +267,9 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $this->_map($data, $entity);
         $this->_saveToLocalCache($entity, $entity->id, $entity);
 
-        $postLoad = (new ReflectionMethod($entity, 'postLoad'))->getClosure($entity);
+        if (!$postLoad = av(self::$_reflectCache, $entityClass . '_postLoad')) {
+            self::$_reflectCache[$entityClass . '_postLoad'] = $postLoad = $this->_getReflection($entity)->getMethod('postLoad')->getClosure($entity);
+        }
         call_user_func($postLoad);
 
         return $entity;
@@ -276,6 +285,11 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $entities[$row['id']] = $this->mapEntity($row, null, $entityClass);
         }
         return $entities;
+    }
+
+    private function _getReflection(Entity_Abstract $entity) {
+        $entityClass = get_class($entity);
+        return av(self::$_reflectCache, $entityClass, new ReflectionClass($entity));
     }
 
     private function _map($data, Entity_Abstract $entity) {
@@ -308,12 +322,18 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $prop->setValue($entity, $value);
         }
 
-        $map = $reflection->getMethod('map')->getClosure($entity);
+        $entityClass = get_class($entity);
+        if (!$map = av(self::$_reflectCache, $entityClass . '_map')) {
+            self::$_reflectCache[$entityClass . '_map'] = $map = $this->_getReflection($entity)->getMethod('map')->getClosure($entity);
+        }
         call_user_func($map, $data);
     }
 
     private function _mapData(Entity_Abstract $entity) {
-        $reflection = new ReflectionClass($entity);
+        $entityClass = get_class($entity);
+        if (!$mapToDataSource = av(self::$_reflectCache, $entityClass . '_mapToDataSource')) {
+            self::$_reflectCache[$entityClass . '_mapToDataSource'] = $mapToDataSource = $this->_getReflection($entity)->getMethod('mapToDataSource')->getClosure($entity);
+        }
 
         // entity -> database
         $data = [];
@@ -331,8 +351,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $rnProperty = 'course_' . lcfirst($entity::getEntityName()) . '_' . $scProperty;
             $mappedProperty = null;
 
-            $map = $reflection->getMethod('mapToDataSource')->getClosure($entity);
-            if ($match = call_user_func($map, $property, $value)) {
+            if ($match = call_user_func($mapToDataSource, $property, $value)) {
                 $mappedProperty = key($match);
                 $data[$mappedProperty] = current($match);
             }
