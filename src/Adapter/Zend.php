@@ -267,9 +267,6 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $this->_map($data, $entity);
         $this->_saveToLocalCache($entity, $entity->id, $entity);
 
-        $postLoad = (new ReflectionClass($entity))->getMethod('postLoad')->getClosure($entity);
-        call_user_func($postLoad);
-
         return $entity;
     }
 

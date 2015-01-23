@@ -15,8 +15,8 @@ use \Exception;
 
 abstract class Entity_Abstract {
     public $_links = [];
-    private $_snapshot = [];
     private $_references = [];
+    private $_reflectProperties = [];
 
     private static $_reflectCache = [];
     protected static $_table;
@@ -26,7 +26,6 @@ abstract class Entity_Abstract {
 
     public function __construct(array $data = []) {
         $this->_setArray($data);
-        $this->_snapshot();
     }
 
     public function __toString() {
@@ -47,6 +46,7 @@ abstract class Entity_Abstract {
     public function __set($name, $value = null) {
         $methodName = 'set' . ucfirst($name);
         $propName = '_' . $name . 'Id';
+        $lowerNameEnd = strtolower(substr($name, -4));
 
         if (method_exists($this, $methodName)) {
             call_user_func_array([$this, $methodName], [$value]);
@@ -54,10 +54,7 @@ abstract class Entity_Abstract {
         elseif (property_exists($this, $propName)) {
             $this->setRelatedEntityProperty($name, $value);
         }
-        elseif (preg_match('/.+Date$/', $name) || preg_match('/^date$/', $name)) { // Can be delete after replace all date strings to CourseHorse_Date object
-            $this->_setDateField($name, $value);
-        }
-        elseif (preg_match('/.+Time$/', $name) || preg_match('/^time$/', $name)) {
+        elseif ($lowerNameEnd === 'time' || $lowerNameEnd === 'date') { // Can be delete after replace all date strings to CourseHorse_Date object
             $this->_setDateField($name, $value);
         }
         elseif (property_exists($this, $name)) {
@@ -154,7 +151,6 @@ abstract class Entity_Abstract {
         static::getDataSource()->saveEntity($this);
         $isNew ? $this->postInsert() : $this->postUpdate();
         $isNew ? $this->_notifyReferences('dependentAdded') : $this->_notifyReferences('dependentUpdated');
-        $this->_snapshot();
     }
 
     public function drop() {
@@ -194,19 +190,9 @@ abstract class Entity_Abstract {
 
     public function toArray($options = null) {
         $values = [];
-        if (!$properties = av(self::$_reflectCache, get_called_class() . '_properties')) {
-            self::$_reflectCache[get_called_class() . '_properties'] = $properties = (new ReflectionClass($this))->getProperties();
-        }
+        $properties = $this->_reflectProperties();
 
-        foreach($properties as $property) {
-            $name = $property->name;
-
-            // ignore static properties
-            if ($property->isStatic()) continue;
-
-            // ignore these specific properties
-            if (in_array($name, ['_snapshot', '_references', '_links'])) continue;
-
+        foreach($properties as $name) {
             // Flatten IDs
             if ($name[0] == '_') {
                 $name = substr($name, 1);
@@ -228,15 +214,8 @@ abstract class Entity_Abstract {
         return $values;
     }
 
-    public function getSnapshot() {
-        $properties = $this->id ? array_diff_assoc($this->_snapshot, $this->_properties()) : $this->_snapshot;
-
-        unset($properties['id']);
-        return $properties;
-    }
-
     public function getDirty() {
-        $properties = $this->id ? diff($this->_properties(), $this->_snapshot) : array_clear_nulls($this->_properties());
+        $properties = $this->id ? $this->_properties() : array_clear_nulls($this->_properties());
         unset($properties['id']);
         return $properties;
     }
@@ -376,10 +355,6 @@ abstract class Entity_Abstract {
         return [static::$_maps[$property] => $value];
     }
 
-    protected function postLoad() {
-        $this->_snapshot();
-    }
-
     protected function preSave() {}
 
     protected function postInsert() {}
@@ -448,20 +423,32 @@ abstract class Entity_Abstract {
 
     protected static function dependentRemoved($id, Entity_Abstract $dependent) {}
 
+    private function _reflectProperties() {
+        if (!empty($this->_reflectProperties)) return $this->_reflectProperties;
+
+        if (!$properties = av(self::$_reflectCache, get_called_class() . '_properties')) {
+            $properties = [];
+
+            foreach ((new ReflectionClass($this))->getProperties() as $property) {
+                if ($property->isStatic()) continue;
+                $name = $property->name;
+
+                // ignore these specific properties
+                if (in_array($name, ['_references', '_links', '_reflectProperties'])) continue;
+                $properties[] = $name;
+            }
+        }
+
+        self::$_reflectCache[get_called_class() . '_properties'] = $this->_reflectProperties = $properties;
+
+        return $this->_reflectProperties;
+    }
+
     private function _properties() {
         $data = [];
-        $reflection = new ReflectionClass($this);
-        $properties = $reflection->getProperties();
+        $properties = $this->_reflectProperties();
 
-        foreach ($properties as $property) {
-            $name = $property->name;
-
-            // ignore static properties
-            if ($property->isStatic()) continue;
-
-            // ignore these specific properties
-            if (in_array($name, ['_snapshot', '_references', '_links'])) continue;
-
+        foreach ($properties as $name) {
             $value = $this->$name;
 
             // Special handling for dates
@@ -470,23 +457,16 @@ abstract class Entity_Abstract {
             }
 
             // Special handling for *_Id properties
-            if (preg_match('/_(.+)Id$/', $name, $matches)) {
-                $field = $matches[1];
-                // id field is null but entity exist, synchronize
-                if (!$value && ($reference = av($this->_references, $field))) {
-                    $this->$name = $reference->id;
-                    $value = $reference->id;
-                }
+            // id field is null but entity exist, synchronize
+            if (!$value && ($reference = av($this->_references, substr($name, strpos($name, '_') + 1, -2)))) {
+                $this->$name = $reference->id;
+                $value = $reference->id;
             }
 
             $data[$name] = $value;
         }
 
         return $data;
-    }
-
-    private function _snapshot() {
-        $this->_snapshot = $this->_properties();
     }
 
     private function _setArray(array $data = []) {
@@ -538,9 +518,7 @@ abstract class Entity_Abstract {
     private static function _getReferenceProperties() {
         $thisClass = get_called_class();
         $values = [];
-        $reflection = new ReflectionClass($thisClass);
-        $properties = $reflection->getProperties();
-        $properties = transform_array($properties, 'name');
+        $properties = $this->_reflectProperties();
 
         foreach($properties as $property) {
             // Flatten IDs
