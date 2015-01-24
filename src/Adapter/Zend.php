@@ -126,24 +126,25 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         }
 
         $select = $this->getAdapter()->select();
-        if ($count) {
-            $select->from(['a' => $dependentClass::getDataSourceName()], ['count' => 'count(1)']);
-        } else {
-            $select->from(['a' => $dependentClass::getDataSourceName()]);
-        }
 
         // Add join clause
         if ($linkTableName = $this->_getLinkTable($parentClass, $dependentClass)) {
             $info = $this->_getReferences($linkTableName);
             $dependentKey = $info[$dependentClass::getDataSourceName()]['column'];
             $parentKey = $info[$parentClass::getDataSourceName()]['column'];
+            $selectParam = $count ? ['count' => 'count(1)'] : ['*'];
+            $select->from(['a' => $dependentClass::getDataSourceName()], $selectParam);
             $select->join(['b' => $linkTableName], "a.id = b.{$dependentKey}", [$parentKey]);
             $select->where("b.{$parentKey} IN (?)", (array) $ids);
+            if ($count) $select->group("b.{$parentKey}");
         }
         else {
             $info = $this->_getReferences($dependentClass::getDataSourceName());
             $parentKey = $info[$parentClass::getDataSourceName()]['column'];
+            $selectParam = $count ? ['count' => 'count(1)', $parentKey] : ['*'];
+            $select->from(['a' => $dependentClass::getDataSourceName()], $selectParam);
             $select->where("a.{$parentKey} IN (?)", (array) $ids);
+            if ($count) $select->group("a.{$parentKey}");
         }
 
         // Add where clause
@@ -158,8 +159,6 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
         // Add limit clause
         $rows = $this->_query($select);
-        if ($count) return (int) av(first($rows), 'count', 0);
-
         $entities = [];
         $groups = [];
 
@@ -169,21 +168,26 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
                 continue;
             }
 
-            // individual dependent might already be in the cache
-            if (!$entity = $this->_getFromLocalCache($dependentClass, $row['id'])) {
-                $entity = $this->mapEntity($row, null, $dependentClass);
-            }
+            if ($count) {
+                $groups[$row[$parentKey]] = $row['count'];
+                $entities[$row[$parentKey]] = $row['count'];
+            } else {
+                // individual dependent might already be in the cache
+                if (!$entity = $this->_getFromLocalCache($dependentClass, $row['id'])) {
+                    $entity = $this->mapEntity($row, null, $dependentClass);
+                }
 
-            $entity->_links[$parentClass::getEntityName()][] = $row[$parentKey];
-            $groups[$row[$parentKey]][$row['id']] = $entity;
-            $entities[$row['id']] = $entity;
+                $entity->_links[$parentClass::getEntityName()][] = $row[$parentKey];
+                $groups[$row[$parentKey]][$row['id']] = $entity;
+                $entities[$row['id']] = $entity;
+            }
         };
 
         $this->_saveToLocalCache($parentClass, $ids, $entities, ['dependents', $dependentClass, $whereHash]);
         foreach((array) $ids as $id) {
             // If limit == 1 we need to flatten the result to a single entity as opposed to an array
             $groupedEntities = ($limit == 1) ? first(av($groups, $id)) : av($groups, $id);
-            $default = ($limit == 1) ? null : [];
+            $default = $count ? 0 : (($limit == 1) ? null : []);
             $this->_saveToLocalCache($parentClass, $id, $groupedEntities ?: $default, ['dependents', $dependentClass, $whereHash]);
         }
 
