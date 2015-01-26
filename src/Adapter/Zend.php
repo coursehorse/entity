@@ -187,10 +187,12 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             // If limit == 1 we need to flatten the result to a single entity as opposed to an array
             $groupedEntities = ($limit == 1) ? first(av($groups, $id)) : av($groups, $id);
             $default = $count ? 0 : (($limit == 1) ? null : []);
+            $returnableEntities = $groupedEntities ?: $default;
             $this->_saveToLocalCache($parentClass, $id, $groupedEntities ?: $default, ['dependents', $dependentClass, $whereHash]);
         }
 
-        return $entities;
+        // If only one ID was asked for, return just that group instead of a size-one array of groups
+        return count($ids) > 1 ? $entities : $returnableEntities;
     }
 
     public function addDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
