@@ -439,7 +439,12 @@ abstract class Entity_Abstract {
             $properties = [];
 
             foreach ((new ReflectionClass($this))->getProperties() as $property) {
+                // ignore static properties
                 if ($property->isStatic()) continue;
+
+                // ignore private properties
+                if ($property->isPrivate()) continue;
+
                 $name = $property->name;
 
                 // ignore these specific properties
