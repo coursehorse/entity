@@ -17,6 +17,7 @@ abstract class Entity_Abstract {
     public $_links = [];
     private $_references = [];
     private $_reflectProperties = [];
+    private $_snapshotEntity = null;
 
     private static $_reflectCache = [];
     protected static $_table;
@@ -223,6 +224,14 @@ abstract class Entity_Abstract {
     public function callHook($name) {
         #HACK to support hooks with zend db rows
         call_user_func([$this, $name]);
+    }
+
+    public function getSnapshot() {
+        return $this->_snapshotEntity;
+    }
+
+    public function updateSnapshot() {
+        $this->_snapshotEntity = clone $this;
     }
 
     public static function __callStatic($name, $arguments) {

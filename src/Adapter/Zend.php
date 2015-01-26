@@ -121,9 +121,8 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
         $whereHash = md5(serialize($where) . serialize($order) . serialize($limit) . serialize($count));
 
-        if ($this->_isInLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash])) {
-            return $this->_getFromLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash]);
-        }
+        $cachedDeps = $this->_getFromLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash]);
+        if ($cachedDeps) return $cachedDeps;
 
         $select = $this->getAdapter()->select();
 
@@ -270,6 +269,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $entity = $entity ?: $this->_getFromLocalCache($entityClass, $data['id']) ?: new $entityClass();
         $this->_map($data, $entity);
         $this->_saveToLocalCache($entity, $entity->id, $entity);
+        $entity->updateSnapshot();
 
         return $entity;
     }
