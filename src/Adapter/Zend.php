@@ -117,12 +117,12 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     public function getDependents($parentClass, $ids, $dependentClass, $where = [], $order = null, $limit = null, $count = false) {
-        if (!$ids) return null;
+        if (!$ids) return ($limit == 1) ? null : [];
 
         $whereHash = md5(serialize($where) . serialize($order) . serialize($limit) . serialize($count));
 
         $cachedDeps = $this->_getFromLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash]);
-        if ($cachedDeps) return $cachedDeps;
+        if (!is_null($cachedDeps)) return $cachedDeps;
 
         $select = $this->getAdapter()->select();
 
@@ -190,7 +190,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $this->_saveToLocalCache($parentClass, $id, $groupedEntities ?: $default, ['dependents', $dependentClass, $whereHash]);
         }
 
-        return $this->_getFromLocalCache($parentClass, $ids, ['dependents', $dependentClass, $whereHash]);
+        return $entities;
     }
 
     public function addDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
@@ -576,14 +576,14 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     private function _saveToLocalCache($entityClass, $id, $data, $additionalKeys = []) {
-        if (!self::$_cacheEnabled) return null;
+        if (!self::$_cacheEnabled) return;
         $key = $this->_getKey($entityClass, $id, $additionalKeys);
 
         self::$_localCache[$key] = $data;
     }
 
     private function _removeFromLocalCache($entityClass, $id, $additionalKeys = []) {
-        if (!self::$_cacheEnabled) return null;
+        if (!self::$_cacheEnabled) return;
         $entityClass = is_object($entityClass) ? get_class($entityClass) : $entityClass;
 
         // wildcard matches
@@ -615,13 +615,6 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $key = $this->_getKey($entityClass, $id, $additionalKeys);
             unset(self::$_localCache[$key]);
         }
-    }
-
-    private function _isInLocalCache($entityClass, $id, $additionalKeys = []) {
-        if (!self::$_cacheEnabled) return null;
-        $key = $this->_getKey($entityClass, $id, $additionalKeys);
-
-        return array_key_exists($key, self::$_localCache);
     }
 
     private function _getKey($entityClass, $ids, $additionalKeys = []) {
