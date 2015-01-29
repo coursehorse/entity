@@ -309,7 +309,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
             // initialize date types
             if (in_array($type, ['datetime', 'timestamp', 'date', 'time'])) {
-                $value = new CourseHorse_Date($value);
+                $value = empty($value) ? null : new CourseHorse_Date($value);
             }
 
             $prop = $reflection->getProperty($property);
