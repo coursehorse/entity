@@ -205,7 +205,10 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $parentKey = $info[$parent::getDataSourceName()]['column'];
 
         if ($row = $this->_select($linkTableName, ["$dependentKey = ?" => $dependent->id, "$parentKey = ?" => $parent->id])) {
-            throw new Exception('Cannot add dependent. Dependent already attached.');
+            throw new Exception(
+                "Cannot add dependent {$dependent::getEntityName()}($dependent->id)." .
+                "Dependent is already attached to parent {$parent::getEntityName()}($parent->id)."
+            );
         }
 
         $this->_insert($linkTableName, [$dependentKey => $dependent->id, $parentKey => $parent->id]);
@@ -225,7 +228,10 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         $parentKey = $info[$parent::getDataSourceName()]['column'];
 
         if (!$row = $this->_select($linkTableName, ["$dependentKey = ?" => $dependent->id, "$parentKey = ?" => $parent->id])) {
-            throw new Exception('Cannot remove dependent. Dependent is not attached.');
+            throw new Exception(
+                "Cannot remove dependent {$dependent::getEntityName()}($dependent->id)." .
+                "Dependent is not attached to parent {$parent::getEntityName()}($parent->id)."
+            );
         }
 
         $this->_delete($linkTableName, ["$dependentKey = ?" => $dependent->id, "$parentKey = ?" => $parent->id]);
