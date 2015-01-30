@@ -492,6 +492,7 @@ abstract class Entity_Abstract {
     private function _notifyReferences($type) {
         // One-to-Many Relationships (direct references)
         foreach($this->_getReferenceProperties() as $name => $class) {
+            if (empty($this->{$name.'Id'})) continue;
             call_user_func_array([$class, $type], [$this->{$name.'Id'}, $this]);
         }
 
