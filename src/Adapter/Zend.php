@@ -320,12 +320,12 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
 
             // initialize float and decimal types
             if (in_array($type, ['decimal'])) {
-                $value = empty($value) ? null : (float) $value;
+                $value = is_null($value) ? null : (float) $value;
             }
 
             // initialize int types
             if (in_array($type, ['int'])) {
-                $value = empty($value) ? null : (int) $value;
+                $value = is_null($value) ? null : (int) $value;
             }
 
             $prop = $reflection->getProperty($property);
