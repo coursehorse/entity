@@ -161,6 +161,7 @@ abstract class Entity_Abstract {
     }
 
     public function reload() {
+        static::getDataSource()->clearFromCache(get_called_class(), $this->id);
         return static::getDataSource()->getEntity(get_called_class(), $this->id, $this);
     }
 
