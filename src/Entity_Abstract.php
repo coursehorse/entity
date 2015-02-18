@@ -177,13 +177,13 @@ abstract class Entity_Abstract {
     }
 
     public function addDependent(Entity_Abstract $dependent) {
-        $this->getDataSource()->addDependent($this, $dependent);
+        static::getDataSource()->addDependent($this, $dependent);
         $this::dependentAdded($this->id, $dependent);
         $dependent::dependentAdded($dependent->id, $this);
     }
 
     public function deleteDependent(Entity_Abstract $dependent) {
-        $this->getDataSource()->deleteDependent($this, $dependent);
+        static::getDataSource()->deleteDependent($this, $dependent);
         $this::dependentRemoved($this->id, $dependent);
         $dependent::dependentRemoved($dependent->id, $this);
     }
@@ -369,7 +369,7 @@ abstract class Entity_Abstract {
         // this will verify that a config exists for this dependent
         list($type, $where, $order, $limit, $count) = self::_getDependentConfig($name);
 
-        $entities = $this->getDataSource()->getDependents(
+        $entities = static::getDataSource()->getDependents(
             get_class($this),
             $this->id,
             'Entity_' . $type,
