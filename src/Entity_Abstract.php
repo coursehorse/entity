@@ -148,6 +148,7 @@ abstract class Entity_Abstract {
         $this->_setArray($data);
         $isNew = (bool) !$this->id;
         $this->preSave();
+        $isNew ? $this->preInsert() : $this->preUpdate();
         static::getDataSource()->saveEntity($this);
         $isNew ? $this->postInsert() : $this->postUpdate();
         $isNew ? $this->_notifyReferences('dependentAdded') : $this->_notifyReferences('dependentUpdated');
@@ -358,7 +359,11 @@ abstract class Entity_Abstract {
 
     protected function preSave() {}
 
+    protected function preInsert() {}
+
     protected function postInsert() {}
+
+    protected function preUpdate() {}
 
     protected function postUpdate() {}
 
