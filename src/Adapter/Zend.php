@@ -324,7 +324,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             }
 
             // initialize int types
-            if (in_array($type, ['int'])) {
+            if (in_array($type, ['int', 'tinyint', 'smallint', 'mediumint', 'bigint'])) {
                 $value = is_null($value) ? null : (int) $value;
             }
 
