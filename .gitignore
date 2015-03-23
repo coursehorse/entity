@@ -1,0 +1,4 @@
+# === Special directories, which created by IDEs ======
+# phpStorm
+.idea/*
+.idea

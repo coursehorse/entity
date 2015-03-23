@@ -196,7 +196,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     public function addDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
-        if (!$linkTableName = $this->_getLinkTable($parent, $dependent)) {
+        if (!$linkTableName = $this->_getLinkTable(get_class($parent), get_class($dependent))) {
             throw new Exception('Cannot determine reference table to add dependent to');
         }
 
@@ -219,7 +219,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     public function deleteDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
-        if (!$linkTableName = $this->_getLinkTable($parent, $dependent)) {
+        if (!$linkTableName = $this->_getLinkTable(get_class($parent), get_class($dependent))) {
             throw new Exception('Cannot determine reference table to remove dependent from');
         }
 
