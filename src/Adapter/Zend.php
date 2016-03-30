@@ -343,6 +343,10 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         // entity -> database
         $data = [];
         foreach ($entity->getDirty() as $property => $value) {
+            // If you pass a value for a `on update CURRENT_TIMESTAMP` column, the column won't update. So we're
+            // never letting you accidentally/intentionally send an update to this column.
+            if (in_array($property, [ 'updatedDate', 'updatedAt' ])) continue;
+
             if ($value instanceof CourseHorse_Date) {
                 $value = $value->toString();
             }
