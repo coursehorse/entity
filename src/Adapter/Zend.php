@@ -639,7 +639,11 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     }
 
     private function _getKey($entityClass, $ids, $additionalKeys = []) {
-        if (is_array($ids)) array_walk($ids, 'intval');
+        if (is_array($ids)) {
+            $ids = array_map(function($id) {
+                return intval($id);
+            }, $ids);
+        }
         if (is_numeric($ids)) $ids = (int) $ids;
         $entityClass = is_object($entityClass) ? get_class($entityClass) : $entityClass;
         return implode('.', array_merge([$entityClass, serialize($ids)], (array) $additionalKeys));
