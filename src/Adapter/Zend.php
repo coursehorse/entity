@@ -270,7 +270,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         return $entityClass;
     }
 
-    protected function mapEntity($data, Entity_Abstract $entity = null, $entityClass = null) {
+    public function mapEntity($data, Entity_Abstract $entity = null, $entityClass = null) {
         if (!$data) return null;
 
         $entityClass = $entityClass ?: static::getEntityClass($this->info(self::NAME));
@@ -281,7 +281,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         return $entity;
     }
 
-    protected function mapEntities(ArrayAccess $rows, $entityClass = null) {
+    public function mapEntities(ArrayAccess $rows, $entityClass = null) {
         if (count($rows) == 0)
             return array();
 
