@@ -18,6 +18,7 @@ use \ArrayObject;
 use \ArrayAccess;
 use \ReflectionClass;
 use \Exception;
+use \DateTimeZone;
 
 class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
     private static $_cacheEnabled = true;
@@ -314,7 +315,9 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             }
 
             // initialize date types
-            if (in_array($type, ['datetime', 'timestamp', 'date', 'time'])) {
+            if ($type == 'timestamp') {
+                $value = empty($value) ? null : new CourseHorse_Date($value, new DateTimeZone('UTC'));
+            } elseif (in_array($type, ['datetime', 'date', 'time'])) {
                 $value = empty($value) ? null : new CourseHorse_Date($value);
             }
 
