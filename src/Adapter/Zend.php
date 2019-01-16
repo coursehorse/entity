@@ -314,10 +314,15 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
                 continue;
             }
 
-            // initialize date types
+            // initialize timestamp
             if ($type == 'timestamp') {
                 $value = empty($value) ? null : new CourseHorse_Date($value, new DateTimeZone('UTC'));
-            } elseif (in_array($type, ['datetime', 'date', 'time'])) {
+            }
+
+            // initialize date types without a time zone (known in some worlds as "naive" types).
+            // PHP will give this DateTime object its default time zone, but as long as you don't try
+            // to convert to a different time zone or expect the actual timestamp to be correct, you'll be okay.
+            if (in_array($type, ['datetime', 'date', 'time'])) {
                 $value = empty($value) ? null : new CourseHorse_Date($value);
             }
 
