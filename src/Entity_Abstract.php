@@ -383,8 +383,13 @@ abstract class Entity_Abstract {
      * @return array
      */
     public static function load($ids) {
+        $ids = (array) $ids;
+        if (empty($ids)) {
+            return [];
+        }
+
         $ds = static::getDataSource();
-        return $ds->getEntities(get_called_class(), (array) $ids);
+        return $ds->getEntities(get_called_class(), $ids);
     }
 
     /**
@@ -400,6 +405,11 @@ abstract class Entity_Abstract {
      * @return array
      */
     public static function loadProgressive($ids, $eagerFetchProperties = [], $context = null, $contextData = []) {
+        $ids = (array) $ids;
+        if (empty($ids)) {
+            return [];
+        }
+
         # Eager load in progressive selects
         $ds = static::getDataSource();
 
@@ -409,13 +419,13 @@ abstract class Entity_Abstract {
 
             // Add additional contextData if present
             $where = $contextData + $where;
-            $entities = call_user_func_array([$ds, 'getDependents'], [get_called_class(), (array) $ids, 'Entity_' . $type, $where, $order, $limit, $count]);
+            $entities = call_user_func_array([$ds, 'getDependents'], [get_called_class(), $ids, 'Entity_' . $type, $where, $order, $limit, $count]);
 
             // Need to make sure this is an array of objects or just null
             $entities = is_object($entities) ? [$entities] : $entities;
         }
         else {
-            $entities = $ds->getEntities(get_called_class(), (array) $ids);
+            $entities = $ds->getEntities(get_called_class(), $ids);
         }
 
         // Eager load properties relying on good old recursion to traverse
