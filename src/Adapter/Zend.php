@@ -401,7 +401,8 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
             $parentReferences = $this->_getDependents($parentClass::getDataSourceName());
             $dependentReferences = $this->_getDependents($dependentClass::getDataSourceName());
             $matches = array_intersect($parentReferences, $dependentReferences);
-
+            // Sort possible matches alphabetically for backward compatibility.
+            asort($matches);
             if (empty($parentReferences)) {
                 $table = null;
             }
