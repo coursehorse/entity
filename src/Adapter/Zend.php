@@ -193,7 +193,7 @@ class Zend extends Zend_Db_Table_Abstract implements DataSourceInterface {
         }
 
         // If only one ID was asked for, return just that group instead of a size-one array of groups
-        return count($ids) > 1 ? $entities : $returnableEntities;
+        return count((array) $ids) > 1 ? $entities : $returnableEntities;
     }
 
     public function addDependent(Entity_Abstract $parent, Entity_Abstract $dependent) {
